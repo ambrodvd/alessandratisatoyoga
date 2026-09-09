@@ -2,3 +2,6 @@
 *.json
 __pycache__/
 *.pyc
+__pycache__/
+*.pyc
+secrets/
