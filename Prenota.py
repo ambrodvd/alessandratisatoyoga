@@ -118,7 +118,9 @@ if submitted:
                         ref=ref, payment_note=nota,
                         mode=choice.mode, location=choice.location,
                     )
-                except Exception:
-                    import traceback
-                    st.warning("Prenotazione registrata, ma l'email non è partita.")
-                    st.code(traceback.format_exc())
+                except Exception as exc:
+                    st.warning(
+                        "Prenotazione registrata, ma l'email di conferma non è partita. "
+                        f"Conserva il codice {ref}."
+                    )
+                    st.caption(f"Debug: {type(exc).__name__} — {exc}")
