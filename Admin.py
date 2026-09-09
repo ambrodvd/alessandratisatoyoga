@@ -211,13 +211,18 @@ with tab_pren:
         st.info("Nessuna prenotazione.")
     else:
         merged = bookings.merge(lessons, on="lesson_id", how="left")
+        merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
         merged = merged.sort_values(["date", "time", "timestamp"], na_position="last")
         active = merged[merged["status"] != "cancelled"]
+        oggi = pd.Timestamp(date.today())
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Confermate", len(active))
         c2.metric("Annullate", len(merged) - len(active))
-        c3.metric("Future", len(active[active["date"] >= date.today()]) if not active.empty else 0)
+        c3.metric(
+            "Future",
+            int((active["date"] >= oggi).sum()) if not active.empty else 0,
+        )
 
         st.dataframe(
             merged[["booking_id", "date", "time", "title", "name", "email",
@@ -244,7 +249,10 @@ with tab_pren:
                     try:
                         mailer.send_cancellation(
                             to=r["email"], name=r["name"], title=r.get("title", ""),
-                            date_str=r["date"].strftime("%d/%m/%Y") if r.get("date") else "",
+                            date_str=(
+                                r["date"].strftime("%d/%m/%Y")
+                                if pd.notna(r.get("date")) else ""
+                            ),
                             time_str=r.get("time", ""),
                         )
                     except Exception:
