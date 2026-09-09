@@ -58,7 +58,7 @@ def send_confirmation(
 
     body = f"""Ciao {name},
 
-ti confermo la tua prenotazione per la lezione {title} di {date_str} alle {time_str}.
+ti confermo la tua prenotazione per la lezione {title} del {date_str} alle {time_str}.
 
 {dove}
 
