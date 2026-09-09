@@ -6,8 +6,22 @@ from email.message import EmailMessage
 import streamlit as st
 
 
+def _cfg() -> dict:
+    """Legge e valida la configurazione email dai secrets."""
+    try:
+        cfg = dict(st.secrets["email"])
+    except KeyError:
+        raise RuntimeError(
+            "Configurazione email assente: manca la sezione [email] nei secrets."
+        )
+    mancanti = [k for k in ("sender", "app_password", "studio_name") if not cfg.get(k)]
+    if mancanti:
+        raise RuntimeError(f"Configurazione email incompleta: {', '.join(mancanti)}")
+    return cfg
+
+
 def _send(to: str, subject: str, body: str) -> None:
-    cfg = st.secrets["email"]
+    cfg = _cfg()
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = f"{cfg['studio_name']} <{cfg['sender']}>"
@@ -25,7 +39,7 @@ def send_confirmation(
     teacher: str, ref: str, payment_note: str = "",
     mode: str = "presenza", location: str = "",
 ) -> None:
-    studio = st.secrets["email"]["studio_name"]
+    studio = _cfg()["studio_name"]
 
     if mode == "online":
         dove = (
@@ -61,11 +75,11 @@ A presto,
 def send_cancellation(
     to: str, name: str, title: str, date_str: str, time_str: str
 ) -> None:
-    studio = st.secrets["email"]["studio_name"]
+    studio = _cfg()["studio_name"]
     body = f"""Ciao {name},
 
-la tua prenotazione per {title} del {date_str} alle {time_str} è stata annullata.
+la tua prenotazione per {title} del {date_str} alle {time_str} e' stata annullata.
 
 {studio}
 """
-    _send(to, f"Prenotazione annullata — {title}, {date_str}", body)
+    _send(to, f"Prenotazione annullata - {title}, {date_str}", body)
