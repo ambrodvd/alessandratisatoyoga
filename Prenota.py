@@ -19,7 +19,7 @@ if lessons.empty:
     st.info("Nessuna lezione in programma.")
     st.stop()
 
-upcoming = lessons[lessons["date"] >= date.today()].sort_values(["date", "time"])
+upcoming = lessons[lessons["date"] >= date.today()]
 if upcoming.empty:
     st.info("Nessuna lezione in programma.")
     st.stop()
@@ -30,33 +30,88 @@ upcoming = upcoming.assign(
 )
 upcoming = upcoming.assign(free=lambda d: (d["capacity"] - d["booked"]).clip(lower=0))
 
-chosen_date = st.selectbox(
-    "Data",
-    options=sorted(upcoming["date"].unique()),
-    format_func=lambda d: d.strftime("%A %d %B %Y"),
+# --- filtri ---
+
+c1, c2 = st.columns(2)
+
+filtro_modo = c1.selectbox(
+    "Mostra",
+    options=["tutte", "presenza", "online"],
+    format_func=lambda m: {
+        "tutte": "Tutte le lezioni",
+        "presenza": "📍 Solo in presenza",
+        "online": "💻 Solo online",
+    }[m],
 )
 
-day = upcoming[upcoming["date"] == chosen_date]
-slots = list(day.itertuples(index=False))
+ordine = c2.selectbox(
+    "Ordina per",
+    options=["data_asc", "data_desc"],
+    format_func=lambda o: {
+        "data_asc": "Data — prima le più vicine",
+        "data_desc": "Data — prima le più lontane",
+    }[o],
+)
+
+vista = upcoming if filtro_modo == "tutte" else upcoming[upcoming["mode"] == filtro_modo]
+vista = vista.sort_values(["date", "time"], ascending=(ordine == "data_asc"))
+
+if vista.empty:
+    st.info("Nessuna lezione con questi filtri.")
+    st.stop()
+
+st.divider()
+
+# --- elenco lezioni ---
+
+GIORNI = {
+    0: "lunedì", 1: "martedì", 2: "mercoledì", 3: "giovedì",
+    4: "venerdì", 5: "sabato", 6: "domenica",
+}
 
 
-def slot_label(row) -> str:
-    tail = f"{row.free} posti liberi" if row.free > 0 else "COMPLETO"
-    icona = "💻" if row.mode == "online" else "📍"
-    return f"{row.time} · {icona} {row.title} · {row.teacher} — {tail}"
+def etichetta(row) -> str:
+    giorno = GIORNI[row.date.weekday()]
+    icona = "💻 online" if row.mode == "online" else "📍 in presenza"
+    stato = f"{row.free} posti" if row.free > 0 else "completo"
+    return (
+        f"**{row.title}** — {giorno} {row.date.strftime('%d/%m/%Y')} — "
+        f"{icona} — ore {row.time}  ·  _{stato}_"
+    )
 
 
-choice = st.radio("Lezione", options=slots, format_func=slot_label)
+slots = [r for r in vista.itertuples(index=False)]
+disponibili = [r for r in slots if r.free > 0]
+piene = [r for r in slots if r.free <= 0]
+
+st.caption(f"{len(disponibili)} lezioni disponibili")
+
+choice = None
+if disponibili:
+    choice = st.radio(
+        "Scegli la lezione",
+        options=disponibili,
+        format_func=etichetta,
+        label_visibility="collapsed",
+    )
+
+if piene:
+    with st.expander(f"Lezioni complete ({len(piene)})"):
+        for r in piene:
+            st.markdown(etichetta(r))
+
+if choice is None:
+    st.warning("Tutte le lezioni sono complete al momento.")
+    st.stop()
+
 st.divider()
 
 if choice.mode == "online":
-    st.info("💻 Lezione online — riceverai il link Zoom nella mail di conferma.")
+    st.info("💻 Riceverai il link per collegarti nella mail di conferma.")
 elif choice.location:
     st.info(f"📍 {choice.location}")
 
-if choice.free <= 0:
-    st.error("Questa lezione è completa. Scegline un'altra.")
-    st.stop()
+# --- form ---
 
 with st.form("booking_form"):
     name = st.text_input("Nome e cognome")
@@ -87,13 +142,8 @@ if submitted:
 
                 st.success(
                     f"Prenotato — {choice.title} il "
-                    f"{chosen_date.strftime('%d/%m/%Y')} alle {choice.time}.\n\n"
+                    f"{choice.date.strftime('%d/%m/%Y')} alle {choice.time}.\n\n"
                     f"Codice: **{ref}**"
-                )
-                st.caption(
-                    "Ti ho mandato una mail di conferma. "
-                    "Se non la trovi, controlla nello spam e segnala "
-                    "il messaggio come attendibile."
                 )
 
                 if balance_after < 0:
@@ -103,20 +153,25 @@ if submitted:
                         "Ti contatterò per il pagamento."
                     )
                     nota = (
-                        f"\n  ⚠ Lezioni da saldare: {da_pagare}\n"
+                        f"Al momento risultano {da_pagare} lezioni da saldare, "
+                        "ti scrivo a parte per il pagamento.\n\n"
                     )
                 else:
-                    st.info(f"Crediti residui dopo questa lezione: **{balance_after}**")
-                    nota = f"\n  Crediti residui: {balance_after}\n"
+                    st.info(f"Ingressi residui: **{balance_after}**")
+                    nota = f"Dopo questa lezione ti restano {balance_after} ingressi.\n\n"
                     st.balloons()
 
                 try:
                     mailer.send_confirmation(
                         to=email, name=name.strip(), title=choice.title,
-                        date_str=chosen_date.strftime("%d/%m/%Y"),
+                        date_str=choice.date.strftime("%d/%m/%Y"),
                         time_str=choice.time, teacher=choice.teacher,
                         ref=ref, payment_note=nota,
                         mode=choice.mode, location=choice.location,
+                    )
+                    st.caption(
+                        "Ti ho mandato una mail di conferma. Se non la trovi, "
+                        "controlla nello spam e segnala il messaggio come attendibile."
                     )
                 except Exception as exc:
                     st.warning(
