@@ -47,14 +47,59 @@ def load_lessons() -> pd.DataFrame:
     df = pd.DataFrame(_sheet("lessons").get_all_records())
     if df.empty:
         return pd.DataFrame(
-            columns=["lesson_id", "date", "time", "title", "teacher", "capacity"]
+            columns=["lesson_id", "date", "time", "title", "teacher",
+                     "capacity", "mode", "location"]
         )
     df["lesson_id"] = df["lesson_id"].astype(str)
     df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
     df["time"] = df["time"].astype(str)
     df["capacity"] = pd.to_numeric(df["capacity"], errors="coerce").fillna(0).astype(int)
+    if "mode" not in df.columns:
+        df["mode"] = "presenza"
+    df["mode"] = (
+        df["mode"].astype(str).str.strip().str.lower()
+        .replace("", "presenza").fillna("presenza")
+    )
+    if "location" not in df.columns:
+        df["location"] = ""
+    df["location"] = df["location"].astype(str).fillna("")
     return df.dropna(subset=["date"])
 
+
+def add_lesson(
+    date_str: str, time_str: str, title: str, teacher: str,
+    capacity: int, mode: str = "presenza", location: str = "",
+) -> str:
+    lesson_id = next_lesson_id()
+    _sheet("lessons").append_row(
+        [
+            lesson_id, date_str, time_str, title.strip(), teacher.strip(),
+            int(capacity), mode.strip().lower(), location.strip(),
+        ],
+        value_input_option="USER_ENTERED",
+    )
+    load_lessons.clear()
+    return lesson_id
+
+def next_lesson_id() -> str:
+    """Genera L001, L002... leggendo direttamente dal foglio."""
+    records = _sheet("lessons").get_all_records()
+    nums = []
+    for r in records:
+        val = str(r.get("lesson_id", "")).strip().upper()
+        if val.startswith("L") and val[1:].isdigit():
+            nums.append(int(val[1:]))
+    return f"L{(max(nums) + 1) if nums else 1:03d}"
+
+
+def delete_lesson(lesson_id: str) -> bool:
+    ws = _sheet("lessons")
+    cell = ws.find(str(lesson_id))
+    if cell is None or cell.col != 1:
+        return False
+    ws.delete_rows(cell.row)
+    load_lessons.clear()
+    return True
 
 # --- bookings ---------------------------------------------------------------
 
@@ -100,7 +145,7 @@ def already_booked(lesson_id: str, email: str) -> bool:
     )
 
 
-def add_booking(lesson_id: str, name: str, email: str, phone: str) -> str:
+def add_booking(lesson_id: str, name: str, email: str, phone: str = "") -> str:
     booking_id = uuid.uuid4().hex[:8].upper()
     _sheet("bookings").append_row(
         [

@@ -23,25 +23,39 @@ def _send(to: str, subject: str, body: str) -> None:
 def send_confirmation(
     to: str, name: str, title: str, date_str: str, time_str: str,
     teacher: str, ref: str, payment_note: str = "",
+    mode: str = "presenza", location: str = "",
 ) -> None:
     studio = st.secrets["email"]["studio_name"]
+
+    if mode == "online":
+        dove = (
+            "La lezione e' online. Ecco il link per collegarti:\n\n"
+            f"  {location}\n\n"
+            "Ti consiglio di entrare qualche minuto prima."
+            if location.strip()
+            else "La lezione e' online. Ti mando il link a breve."
+        )
+    else:
+        dove = (
+            f"Ci vediamo qui: {location}"
+            if location.strip()
+            else "Ci vediamo in studio."
+        )
+
     body = f"""Ciao {name},
 
-la tua prenotazione è confermata.
+ti confermo il posto per {title} di {date_str} alle {time_str}, con {teacher}.
 
-  Lezione:    {title}
-  Data:       {date_str}
-  Ora:        {time_str}
-  Insegnante: {teacher}
+{dove}
 
-  Codice prenotazione: {ref}
+Il codice della tua prenotazione e' {ref}.
 {payment_note}
-Se non puoi venire, avvisami rispondendo a questa email.
+Se poi non riesci a venire scrivimi rispondendo qui, cosi' libero il posto per qualcun altro.
 
 A presto,
 {studio}
 """
-    _send(to, f"Prenotazione confermata — {title}, {date_str}", body)
+    _send(to, f"Ci vediamo {date_str} — {title}", body)
 
 
 def send_cancellation(

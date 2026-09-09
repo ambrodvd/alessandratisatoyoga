@@ -42,11 +42,17 @@ slots = list(day.itertuples(index=False))
 
 def slot_label(row) -> str:
     tail = f"{row.free} posti liberi" if row.free > 0 else "COMPLETO"
-    return f"{row.time} · {row.title} · {row.teacher} — {tail}"
+    icona = "💻" if row.mode == "online" else "📍"
+    return f"{row.time} · {icona} {row.title} · {row.teacher} — {tail}"
 
 
 choice = st.radio("Lezione", options=slots, format_func=slot_label)
 st.divider()
+
+if choice.mode == "online":
+    st.info("💻 Lezione online — riceverai il link Zoom nella mail di conferma.")
+elif choice.location:
+    st.info(f"📍 {choice.location}")
 
 if choice.free <= 0:
     st.error("Questa lezione è completa. Scegline un'altra.")
@@ -55,7 +61,6 @@ if choice.free <= 0:
 with st.form("booking_form"):
     name = st.text_input("Nome e cognome")
     email = st.text_input("Email")
-    phone = st.text_input("Telefono (facoltativo)")
     consent = st.checkbox(
         "Acconsento al trattamento dei miei dati per la gestione della prenotazione."
     )
@@ -77,13 +82,18 @@ if submitted:
                 data.load_bookings.clear()
             else:
                 balance_before = data.balance_live(email)
-                ref = data.add_booking(choice.lesson_id, name, email, phone)
+                ref = data.add_booking(choice.lesson_id, name, email)
                 balance_after = balance_before - 1
 
                 st.success(
                     f"Prenotato — {choice.title} il "
                     f"{chosen_date.strftime('%d/%m/%Y')} alle {choice.time}.\n\n"
                     f"Codice: **{ref}**"
+                )
+                st.caption(
+                    "Ti ho mandato una mail di conferma. "
+                    "Se non la trovi, controlla nello spam e segnala "
+                    "il messaggio come attendibile."
                 )
 
                 if balance_after < 0:
@@ -106,6 +116,9 @@ if submitted:
                         date_str=chosen_date.strftime("%d/%m/%Y"),
                         time_str=choice.time, teacher=choice.teacher,
                         ref=ref, payment_note=nota,
+                        mode=choice.mode, location=choice.location,
                     )
                 except Exception:
-                    st.info("Prenotazione registrata, ma l'email di conferma non è partita.")
+                    import traceback
+                    st.warning("Prenotazione registrata, ma l'email non è partita.")
+                    st.code(traceback.format_exc())
