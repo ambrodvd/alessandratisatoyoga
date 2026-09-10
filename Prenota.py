@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import streamlit as st
 
@@ -36,9 +36,11 @@ c1, c2 = st.columns(2)
 
 filtro_modo = c1.selectbox(
     "Mostra",
-    options=["tutte", "presenza", "online"],
+    options=["tutte", "questa_settimana", "prossima_settimana", "presenza", "online"],
     format_func=lambda m: {
         "tutte": "Tutte le lezioni",
+        "questa_settimana": "📅 Questa settimana",
+        "prossima_settimana": "📅 Prossima settimana",
         "presenza": "📍 Solo in presenza",
         "online": "💻 Solo online",
     }[m],
@@ -53,12 +55,22 @@ ordine = c2.selectbox(
     }[o],
 )
 
-vista = upcoming if filtro_modo == "tutte" else upcoming[upcoming["mode"] == filtro_modo]
-vista = vista.sort_values(["date", "time"], ascending=(ordine == "data_asc"))
+oggi = date.today()
+lunedi = oggi - timedelta(days=oggi.weekday())
+domenica = lunedi + timedelta(days=6)
 
-if vista.empty:
-    st.info("Nessuna lezione con questi filtri.")
-    st.stop()
+if filtro_modo in ("presenza", "online"):
+    vista = upcoming[upcoming["mode"] == filtro_modo]
+elif filtro_modo == "questa_settimana":
+    vista = upcoming[upcoming["date"] <= domenica]
+elif filtro_modo == "prossima_settimana":
+    vista = upcoming[
+        (upcoming["date"] > domenica) & (upcoming["date"] <= domenica + timedelta(days=7))
+    ]
+else:
+    vista = upcoming
+
+vista = vista.sort_values(["date", "time"], ascending=(ordine == "data_asc"))
 
 st.divider()
 
@@ -136,7 +148,8 @@ if submitted:
                 st.error("Qualcuno ha appena preso l'ultimo posto. Scegli un'altra lezione.")
                 data.load_bookings.clear()
             else:
-                balance_before = data.balance_live(email)
+                cat_id = choice.category_id
+                balance_before = data.balance_live(email, cat_id)
                 ref = data.add_booking(choice.lesson_id, name, email)
                 balance_after = balance_before - 1
 
@@ -149,16 +162,19 @@ if submitted:
                 if balance_after < 0:
                     da_pagare = abs(balance_after)
                     st.warning(
-                        f"Risultano **{da_pagare} lezioni da saldare**. "
-                        "Ti contatterò per il pagamento."
+                        f"Risultano **{da_pagare} lezioni da saldare** "
+                        f"per {choice.title}. Ti contatterò per il pagamento."
                     )
                     nota = (
-                        f"Al momento risultano {da_pagare} lezioni da saldare, "
-                        "ti scrivo a parte per il pagamento.\n\n"
+                        f"Per {choice.title} risultano {da_pagare} lezioni da "
+                        "saldare, ti scrivo a parte per il pagamento.\n\n"
                     )
                 else:
-                    st.info(f"Ingressi residui: **{balance_after}**")
-                    nota = f"Dopo questa lezione ti restano {balance_after} ingressi.\n\n"
+                    st.info(f"Ingressi residui per {choice.title}: **{balance_after}**")
+                    nota = (
+                        f"Dopo questa lezione ti restano {balance_after} "
+                        f"ingressi per {choice.title}.\n\n"
+                    )
                     st.balloons()
 
                 try:

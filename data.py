@@ -19,8 +19,13 @@ BOOKING_COLUMNS = [
 ]
 
 PAYMENT_COLUMNS = [
-    "payment_id", "email", "name", "credits",
+    "payment_id", "email", "name", "category_id", "credits",
     "amount_eur", "date", "method", "note",
+]
+
+CATEGORY_COLUMNS = [
+    "category_id", "name", "mode", "location",
+    "price_single", "price_package", "package_credits",
 ]
 
 
@@ -40,7 +45,88 @@ def _sheet(tab: str) -> gspread.Worksheet:
     return _client().open_by_key(st.secrets["spreadsheet_id"]).worksheet(tab)
 
 
-# --- lessons ----------------------------------------------------------------
+# =============================================================
+# CATEGORIE
+# =============================================================
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_categories() -> pd.DataFrame:
+    df = pd.DataFrame(_sheet("categories").get_all_records())
+    if df.empty:
+        return pd.DataFrame(columns=CATEGORY_COLUMNS)
+    df["category_id"] = df["category_id"].astype(str)
+    df["mode"] = (
+        df["mode"].astype(str).str.strip().str.lower()
+        .replace("", "presenza").fillna("presenza")
+    )
+    df["location"] = df["location"].astype(str).fillna("")
+    for col in ("price_single", "price_package"):
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    df["package_credits"] = (
+        pd.to_numeric(df["package_credits"], errors="coerce").fillna(0).astype(int)
+    )
+    return df
+
+
+def next_category_id() -> str:
+    records = _sheet("categories").get_all_records()
+    nums = []
+    for r in records:
+        val = str(r.get("category_id", "")).strip().upper()
+        if val.startswith("C") and val[1:].isdigit():
+            nums.append(int(val[1:]))
+    return f"C{(max(nums) + 1) if nums else 1:03d}"
+
+
+def add_category(
+    name: str, mode: str, location: str,
+    price_single: float, price_package: float, package_credits: int,
+) -> str:
+    category_id = next_category_id()
+    _sheet("categories").append_row(
+        [
+            category_id, name.strip(), mode.strip().lower(), location.strip(),
+            float(price_single), float(price_package), int(package_credits),
+        ],
+        value_input_option="USER_ENTERED",
+    )
+    load_categories.clear()
+    return category_id
+
+
+def update_category(
+    category_id: str, name: str, mode: str, location: str,
+    price_single: float, price_package: float, package_credits: int,
+) -> bool:
+    ws = _sheet("categories")
+    cell = ws.find(str(category_id))
+    if cell is None or cell.col != 1:
+        return False
+    ws.update(
+        f"A{cell.row}:G{cell.row}",
+        [[
+            str(category_id), name.strip(), mode.strip().lower(), location.strip(),
+            float(price_single), float(price_package), int(package_credits),
+        ]],
+        value_input_option="USER_ENTERED",
+    )
+    load_categories.clear()
+    return True
+
+
+def delete_category(category_id: str) -> bool:
+    ws = _sheet("categories")
+    cell = ws.find(str(category_id))
+    if cell is None or cell.col != 1:
+        return False
+    ws.delete_rows(cell.row)
+    load_categories.clear()
+    return True
+
+
+# =============================================================
+# LEZIONI
+# =============================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_lessons() -> pd.DataFrame:
@@ -48,7 +134,7 @@ def load_lessons() -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(
             columns=["lesson_id", "date", "time", "title", "teacher",
-                     "capacity", "mode", "location"]
+                     "capacity", "mode", "location", "category_id"]
         )
     df["lesson_id"] = df["lesson_id"].astype(str)
     df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
@@ -60,29 +146,14 @@ def load_lessons() -> pd.DataFrame:
         df["mode"].astype(str).str.strip().str.lower()
         .replace("", "presenza").fillna("presenza")
     )
-    if "location" not in df.columns:
-        df["location"] = ""
-    df["location"] = df["location"].astype(str).fillna("")
+    for col in ("location", "category_id"):
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].astype(str).fillna("")
     return df.dropna(subset=["date"])
 
 
-def add_lesson(
-    date_str: str, time_str: str, title: str, teacher: str,
-    capacity: int, mode: str = "presenza", location: str = "",
-) -> str:
-    lesson_id = next_lesson_id()
-    _sheet("lessons").append_row(
-        [
-            lesson_id, date_str, time_str, title.strip(), teacher.strip(),
-            int(capacity), mode.strip().lower(), location.strip(),
-        ],
-        value_input_option="USER_ENTERED",
-    )
-    load_lessons.clear()
-    return lesson_id
-
 def next_lesson_id() -> str:
-    """Genera L001, L002... leggendo direttamente dal foglio."""
     records = _sheet("lessons").get_all_records()
     nums = []
     for r in records:
@@ -90,6 +161,23 @@ def next_lesson_id() -> str:
         if val.startswith("L") and val[1:].isdigit():
             nums.append(int(val[1:]))
     return f"L{(max(nums) + 1) if nums else 1:03d}"
+
+
+def add_lesson(
+    date_str: str, time_str: str, title: str, teacher: str,
+    capacity: int, mode: str = "presenza", location: str = "",
+    category_id: str = "",
+) -> str:
+    lesson_id = next_lesson_id()
+    _sheet("lessons").append_row(
+        [
+            lesson_id, date_str, time_str, title.strip(), teacher.strip(),
+            int(capacity), mode.strip().lower(), location.strip(), str(category_id),
+        ],
+        value_input_option="USER_ENTERED",
+    )
+    load_lessons.clear()
+    return lesson_id
 
 
 def delete_lesson(lesson_id: str) -> bool:
@@ -101,7 +189,10 @@ def delete_lesson(lesson_id: str) -> bool:
     load_lessons.clear()
     return True
 
-# --- bookings ---------------------------------------------------------------
+
+# =============================================================
+# PRENOTAZIONI
+# =============================================================
 
 @st.cache_data(ttl=20, show_spinner=False)
 def load_bookings() -> pd.DataFrame:
@@ -168,7 +259,9 @@ def cancel_booking(booking_id: str) -> bool:
     return True
 
 
-# --- payments ---------------------------------------------------------------
+# =============================================================
+# PAGAMENTI E SALDI
+# =============================================================
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_payments() -> pd.DataFrame:
@@ -176,20 +269,23 @@ def load_payments() -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=PAYMENT_COLUMNS)
     df["email"] = df["email"].map(norm_email)
+    if "category_id" not in df.columns:
+        df["category_id"] = ""
+    df["category_id"] = df["category_id"].astype(str).str.strip()
     df["credits"] = pd.to_numeric(df["credits"], errors="coerce").fillna(0).astype(int)
     df["amount_eur"] = pd.to_numeric(df["amount_eur"], errors="coerce").fillna(0.0)
     return df
 
 
 def add_payment(
-    email: str, name: str, credits: int, amount_eur: float,
-    date_str: str, method: str, note: str = "",
+    email: str, name: str, category_id: str, credits: int,
+    amount_eur: float, date_str: str, method: str, note: str = "",
 ) -> str:
     payment_id = "P" + uuid.uuid4().hex[:6].upper()
     _sheet("payments").append_row(
         [
-            payment_id, norm_email(email), name.strip(), int(credits),
-            float(amount_eur), date_str, method.strip(), note.strip(),
+            payment_id, norm_email(email), name.strip(), str(category_id).strip(),
+            int(credits), float(amount_eur), date_str, method.strip(), note.strip(),
         ],
         value_input_option="USER_ENTERED",
     )
@@ -197,64 +293,103 @@ def add_payment(
     return payment_id
 
 
-def credit_balance(email: str, payments: pd.DataFrame, bookings: pd.DataFrame) -> int:
-    """Crediti acquistati meno prenotazioni confermate. Negativo = da pagare."""
-    target = norm_email(email)
-    bought = 0
-    if not payments.empty:
-        bought = int(payments.loc[payments["email"] == target, "credits"].sum())
-    used = 0
-    if not bookings.empty:
-        used = int(
-            (
-                (bookings["email"] == target)
-                & (bookings["status"] != "cancelled")
-            ).sum()
-        )
-    return bought - used
+def _cat_by_lesson(lessons: pd.DataFrame) -> dict:
+    if lessons.empty:
+        return {}
+    return {
+        str(lid): str(cid).strip()
+        for lid, cid in zip(lessons["lesson_id"], lessons["category_id"])
+    }
 
 
-def balance_live(email: str) -> int:
-    """Saldo letto direttamente dal foglio, senza cache."""
+def balance_live(email: str, category_id: str) -> int:
+    """Saldo di categoria letto direttamente dal foglio, senza cache."""
     target = norm_email(email)
+    cat = str(category_id).strip()
+
     bought = sum(
         int(pd.to_numeric(r.get("credits"), errors="coerce") or 0)
         for r in _sheet("payments").get_all_records()
         if norm_email(r.get("email")) == target
+        and str(r.get("category_id", "")).strip() == cat
     )
+
+    mappa = {
+        str(r.get("lesson_id")): str(r.get("category_id", "")).strip()
+        for r in _sheet("lessons").get_all_records()
+    }
     used = sum(
-        1 for r in _sheet("bookings").get_all_records()
+        1
+        for r in _sheet("bookings").get_all_records()
         if norm_email(r.get("email")) == target
         and (r.get("status") or "confirmed") != "cancelled"
+        and mappa.get(str(r.get("lesson_id")), "") == cat
     )
+
     return bought - used
 
 
-def balances_all(payments: pd.DataFrame, bookings: pd.DataFrame) -> pd.DataFrame:
-    """Tabella riepilogativa per la pagina Admin."""
-    emails = set()
-    if not payments.empty:
-        emails |= set(payments["email"])
-    if not bookings.empty:
-        emails |= set(bookings.loc[bookings["status"] != "cancelled", "email"])
-    if not emails:
-        return pd.DataFrame(columns=["email", "name", "acquistati", "usati", "saldo"])
+def balances_all(
+    payments: pd.DataFrame, bookings: pd.DataFrame,
+    lessons: pd.DataFrame, categories: pd.DataFrame,
+) -> pd.DataFrame:
+    """Riepilogo per coppia (email, categoria)."""
+    colonne = ["email", "name", "categoria", "category_id",
+               "acquistati", "usati", "saldo"]
 
-    rows = []
-    for e in sorted(emails):
-        bought = int(payments.loc[payments["email"] == e, "credits"].sum()) if not payments.empty else 0
-        used = int(((bookings["email"] == e) & (bookings["status"] != "cancelled")).sum()) if not bookings.empty else 0
-        name = ""
+    mappa = _cat_by_lesson(lessons)
+    nome_cat = (
+        dict(zip(categories["category_id"], categories["name"]))
+        if not categories.empty else {}
+    )
+
+    attive = (
+        bookings[bookings["status"] != "cancelled"]
+        if not bookings.empty else bookings
+    )
+
+    coppie = set()
+    if not payments.empty:
+        coppie |= set(zip(payments["email"], payments["category_id"]))
+    if not attive.empty:
+        for _, b in attive.iterrows():
+            coppie.add((b["email"], mappa.get(str(b["lesson_id"]), "")))
+
+    if not coppie:
+        return pd.DataFrame(columns=colonne)
+
+    nomi = {}
+    for df in (payments, bookings):
+        if not df.empty:
+            for _, r in df.iterrows():
+                if r.get("name"):
+                    nomi[r["email"]] = r["name"]
+
+    righe = []
+    for mail, cat in sorted(coppie):
+        bought = 0
         if not payments.empty:
-            match = payments.loc[payments["email"] == e, "name"]
-            if not match.empty:
-                name = match.iloc[-1]
-        if not name and not bookings.empty:
-            match = bookings.loc[bookings["email"] == e, "name"]
-            if not match.empty:
-                name = match.iloc[-1]
-        rows.append({
-            "email": e, "name": name,
-            "acquistati": bought, "usati": used, "saldo": bought - used,
+            bought = int(
+                payments.loc[
+                    (payments["email"] == mail) & (payments["category_id"] == cat),
+                    "credits",
+                ].sum()
+            )
+        used = 0
+        if not attive.empty:
+            used = sum(
+                1
+                for _, b in attive.iterrows()
+                if b["email"] == mail and mappa.get(str(b["lesson_id"]), "") == cat
+            )
+        righe.append({
+            "email": mail,
+            "name": nomi.get(mail, ""),
+            "categoria": nome_cat.get(cat, "— senza categoria —" if not cat else cat),
+            "category_id": cat,
+            "acquistati": bought,
+            "usati": used,
+            "saldo": bought - used,
         })
-    return pd.DataFrame(rows).sort_values("saldo")
+
+    return pd.DataFrame(righe, columns=colonne).sort_values(["saldo", "email"])
