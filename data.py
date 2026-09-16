@@ -393,3 +393,35 @@ def balances_all(
         })
 
     return pd.DataFrame(righe, columns=colonne).sort_values(["saldo", "email"])
+
+def used_live(email: str, category_id: str) -> int:
+    """Quante lezioni di questa categoria la persona ha già prenotato."""
+    target = norm_email(email)
+    cat = str(category_id).strip()
+    mappa = {
+        str(r.get("lesson_id")): str(r.get("category_id", "")).strip()
+        for r in _sheet("lessons").get_all_records()
+    }
+    return sum(
+        1
+        for r in _sheet("bookings").get_all_records()
+        if norm_email(r.get("email")) == target
+        and (r.get("status") or "confirmed") != "cancelled"
+        and mappa.get(str(r.get("lesson_id")), "") == cat
+    )
+
+def bookings_of(
+    email: str, bookings: pd.DataFrame, lessons: pd.DataFrame
+) -> pd.DataFrame:
+    """Prenotazioni attive di una persona, con i dati della lezione."""
+    if bookings.empty:
+        return pd.DataFrame()
+    target = norm_email(email)
+    mie = bookings[
+        (bookings["email"] == target) & (bookings["status"] != "cancelled")
+    ]
+    if mie.empty or lessons.empty:
+        return mie
+    return mie.merge(lessons, on="lesson_id", how="left").sort_values(
+        "date", ascending=False, na_position="last"
+    )

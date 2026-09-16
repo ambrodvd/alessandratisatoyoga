@@ -5,12 +5,12 @@ import streamlit as st
 import data
 import mailer
 
-st.set_page_config(page_title="Prenota una lezione", page_icon="🧘", layout="centered")
 st.title("🧘 Prenota una lezione")
 
 try:
     lessons = data.load_lessons()
     bookings = data.load_bookings()
+    categories = data.load_categories()
 except Exception:
     st.error("Impossibile caricare il calendario. Riprova tra un momento.")
     st.stop()
@@ -30,13 +30,15 @@ upcoming = upcoming.assign(
 )
 upcoming = upcoming.assign(free=lambda d: (d["capacity"] - d["booked"]).clip(lower=0))
 
-# --- filtri ---
+# =============================================================
+# FILTRI
+# =============================================================
 
 c1, c2 = st.columns(2)
 
-filtro_modo = c1.selectbox(
+filtro = c1.selectbox(
     "Mostra",
-    options=["tutte", "questa_settimana", "prossima_settimana", "presenza", "online"],
+    options=["questa_settimana", "prossima_settimana","tutte", "presenza", "online"],
     format_func=lambda m: {
         "tutte": "Tutte le lezioni",
         "questa_settimana": "📅 Questa settimana",
@@ -44,6 +46,7 @@ filtro_modo = c1.selectbox(
         "presenza": "📍 Solo in presenza",
         "online": "💻 Solo online",
     }[m],
+    key="filtro_mostra",
 )
 
 ordine = c2.selectbox(
@@ -53,28 +56,35 @@ ordine = c2.selectbox(
         "data_asc": "Data — prima le più vicine",
         "data_desc": "Data — prima le più lontane",
     }[o],
+    key="filtro_ordine",
 )
 
 oggi = date.today()
-lunedi = oggi - timedelta(days=oggi.weekday())
-domenica = lunedi + timedelta(days=6)
+domenica = oggi + timedelta(days=6 - oggi.weekday())
 
-if filtro_modo in ("presenza", "online"):
-    vista = upcoming[upcoming["mode"] == filtro_modo]
-elif filtro_modo == "questa_settimana":
+if filtro in ("presenza", "online"):
+    vista = upcoming[upcoming["mode"] == filtro]
+elif filtro == "questa_settimana":
     vista = upcoming[upcoming["date"] <= domenica]
-elif filtro_modo == "prossima_settimana":
+elif filtro == "prossima_settimana":
     vista = upcoming[
-        (upcoming["date"] > domenica) & (upcoming["date"] <= domenica + timedelta(days=7))
+        (upcoming["date"] > domenica)
+        & (upcoming["date"] <= domenica + timedelta(days=7))
     ]
 else:
     vista = upcoming
 
 vista = vista.sort_values(["date", "time"], ascending=(ordine == "data_asc"))
 
+if vista.empty:
+    st.info("Nessuna lezione con questi filtri.")
+    st.stop()
+
 st.divider()
 
-# --- elenco lezioni ---
+# =============================================================
+# ELENCO LEZIONI
+# =============================================================
 
 GIORNI = {
     0: "lunedì", 1: "martedì", 2: "mercoledì", 3: "giovedì",
@@ -92,7 +102,7 @@ def etichetta(row) -> str:
     )
 
 
-slots = [r for r in vista.itertuples(index=False)]
+slots = list(vista.itertuples(index=False))
 disponibili = [r for r in slots if r.free > 0]
 piene = [r for r in slots if r.free <= 0]
 
@@ -105,6 +115,7 @@ if disponibili:
         options=disponibili,
         format_func=etichetta,
         label_visibility="collapsed",
+        key="scelta_lezione",
     )
 
 if piene:
@@ -123,7 +134,9 @@ if choice.mode == "online":
 elif choice.location:
     st.info(f"📍 {choice.location}")
 
-# --- form ---
+# =============================================================
+# FORM
+# =============================================================
 
 with st.form("booking_form"):
     name = st.text_input("Nome e cognome")
@@ -145,13 +158,18 @@ if submitted:
             if data.already_booked(choice.lesson_id, email):
                 st.warning("Risulti già iscritto a questa lezione.")
             elif data.count_live(choice.lesson_id) >= choice.capacity:
-                st.error("Qualcuno ha appena preso l'ultimo posto. Scegli un'altra lezione.")
+                st.error(
+                    "Qualcuno ha appena preso l'ultimo posto. "
+                    "Scegli un'altra lezione."
+                )
                 data.load_bookings.clear()
             else:
                 cat_id = choice.category_id
+                usate_prima = data.used_live(email, cat_id)
                 balance_before = data.balance_live(email, cat_id)
                 ref = data.add_booking(choice.lesson_id, name, email)
                 balance_after = balance_before - 1
+                prima_volta = usate_prima == 0
 
                 st.success(
                     f"Prenotato — {choice.title} il "
@@ -161,29 +179,111 @@ if submitted:
 
                 if balance_after < 0:
                     da_pagare = abs(balance_after)
+                    base = st.secrets.get("paypal_me", "")
+
+                    prezzo_singola = prezzo_pacchetto = 0.0
+                    crediti_pacchetto = 0
+                    if not categories.empty and cat_id:
+                        match = categories[categories["category_id"] == cat_id]
+                        if not match.empty:
+                            c = match.iloc[0]
+                            prezzo_singola = float(c["price_single"])
+                            prezzo_pacchetto = float(c["price_package"])
+                            crediti_pacchetto = int(c["package_credits"])
+
+                    importo = prezzo_singola * da_pagare
+                    parola = "lezione" if da_pagare == 1 else "lezioni"
+
+                    importo = prezzo_singola * da_pagare
+                    parola = "lezione" if da_pagare == 1 else "lezioni"
+
+                    if prima_volta:
+                        st.info(
+                            f"🎁 **Se è la tua prima volta in {choice.title} "
+                            "hai diritto a una lezione di prova. Non procedere con il pagamento**"
+                        )
+
                     st.warning(
-                        f"Risultano **{da_pagare} lezioni da saldare** "
-                        f"per {choice.title}. Ti contatterò per il pagamento."
+                        f"Risulta **{da_pagare} {parola} da saldare** "
+                        f"per {choice.title}."
                     )
-                    nota = (
-                        f"Per {choice.title} risultano {da_pagare} lezioni da "
-                        "saldare, ti scrivo a parte per il pagamento.\n\n"
+
+                    if base:
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.markdown("**Salda il dovuto**")
+                            st.markdown(
+                                f"{da_pagare} × € {prezzo_singola:.2f} = "
+                                f"**€ {importo:.2f}**"
+                            )
+                            st.markdown(
+                                f"[Paga con PayPal]({base}/{importo:.2f}EUR)"
+                            )
+                        with col_b:
+                            if crediti_pacchetto:
+                                st.markdown("**Compra un pacchetto**")
+                                st.markdown(
+                                    f"{crediti_pacchetto} lezioni = "
+                                    f"**€ {prezzo_pacchetto:.2f}**"
+                                )
+                                st.markdown(
+                                    f"[Paga con PayPal]"
+                                    f"({base}/{prezzo_pacchetto:.2f}EUR)"
+                                )
+                        st.caption(
+                            "Dopo il pagamento aggiorno io il tuo saldo, "
+                            "di solito entro poche ore."
+                        )
+
+                    avviso = (
+                        f"Se è la tua prima volta in {choice.title} non procedere "
+                        "con il pagamento, in quanto hai diritto a una lezione "
+                        "di prova.\n\n"
+                        if prima_volta
+                        else ""
                     )
+
+                    if crediti_pacchetto and base:
+                        nota = avviso + (
+                            f"Per {choice.title} risulta {da_pagare} {parola} da "
+                            f"saldare.\n\n"
+                            f"  Salda {da_pagare} {parola} — € {importo:.2f}\n"
+                            f"  {base}/{importo:.2f}EUR\n\n"
+                            f"  Oppure un pacchetto da {crediti_pacchetto} lezioni "
+                            f"— € {prezzo_pacchetto:.2f}\n"
+                            f"  {base}/{prezzo_pacchetto:.2f}EUR\n\n"
+                        )
+                    else:
+                        nota = avviso + (
+                            f"Per {choice.title} risulta {da_pagare} {parola} da "
+                            f"saldare (€ {importo:.2f}).\n\n"
+                        )
+                    pay_link = ""
                 else:
-                    st.info(f"Ingressi residui per {choice.title}: **{balance_after}**")
+                    st.info(
+                        f"Ingressi residui per {choice.title}: **{balance_after}**"
+                    )
                     nota = (
                         f"Dopo questa lezione ti restano {balance_after} "
                         f"ingressi per {choice.title}.\n\n"
                     )
+                    pay_link = ""
                     st.balloons()
 
                 try:
                     mailer.send_confirmation(
-                        to=email, name=name.strip(), title=choice.title,
+                        to=email,
+                        name=name.strip(),
+                        title=choice.title,
                         date_str=choice.date.strftime("%d/%m/%Y"),
-                        time_str=choice.time, teacher=choice.teacher,
-                        ref=ref, payment_note=nota,
-                        mode=choice.mode, location=choice.location,
+                        time_str=choice.time,
+                        teacher=choice.teacher,
+                        ref=ref,
+                        payment_note=nota,
+                        mode=choice.mode,
+                        location=choice.location,
+                        pay_link=pay_link,
+                        prima_volta=False,
                     )
                     st.caption(
                         "Ti ho mandato una mail di conferma. Se non la trovi, "
@@ -191,7 +291,7 @@ if submitted:
                     )
                 except Exception as exc:
                     st.warning(
-                        "Prenotazione registrata, ma l'email di conferma non è partita. "
-                        f"Conserva il codice {ref}."
+                        "Prenotazione registrata, ma l'email di conferma non è "
+                        f"partita. Conserva il codice {ref}."
                     )
                     st.caption(f"Debug: {type(exc).__name__} — {exc}")
