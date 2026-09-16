@@ -80,7 +80,7 @@ il tuo posto per {title} di {date_str} alle {time_str} è confermato.
 
 {dove}
 
-{avviso_prova}{payment_note}{pagamento}Se non riesci a venire fammelo sapere rispondendo a questa mail, così libero il posto.
+{avviso_prova}{payment_note}{pagamento}Se non riesci a venire fammelo sapere rispondendo a questa mail.
 
 A presto,
 {studio}
