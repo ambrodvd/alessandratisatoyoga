@@ -267,16 +267,20 @@ if submitted:
                         else ""
                     )
 
-                    if crediti_pacchetto and base:
-                        nota = avviso + (
+                    if base:
+                        righe = [
                             f"Per {choice.title} risulta {da_pagare} {parola} da "
-                            f"saldare.\n\n"
-                            f"  Salda {da_pagare} {parola} — € {importo:.2f}\n"
-                            f"  {base}/{importo:.2f}EUR\n\n"
-                            f"  Oppure un pacchetto da {crediti_pacchetto} lezioni "
-                            f"— € {prezzo_pacchetto:.2f}\n"
-                            f"  {base}/{prezzo_pacchetto:.2f}EUR\n\n"
-                        )
+                            f"saldare.\n",
+                            f"  Salda {da_pagare} {parola} — € {importo:.2f}",
+                            f"  {base}/{importo:.2f}EUR\n",
+                        ]
+                        if crediti_pacchetto:
+                            righe += [
+                                f"  Oppure un pacchetto da {crediti_pacchetto} "
+                                f"lezioni — € {prezzo_pacchetto:.2f}",
+                                f"  {base}/{prezzo_pacchetto:.2f}EUR\n",
+                            ]
+                        nota = avviso + "\n".join(righe) + "\n"
                     else:
                         nota = avviso + (
                             f"Per {choice.title} risulta {da_pagare} {parola} da "
