@@ -169,7 +169,10 @@ with tab_lezioni:
                 options=list(categories["category_id"]),
                 format_func=_label_cat, key="cat_del_sel",
             )
-            ok_del = st.checkbox("Seleziona la casella se sei sicura di voler cancellare", key="cat_del_ok")
+            ok_del = st.checkbox(
+                "Seleziona la casella se sei sicura di voler cancellare",
+                key="cat_del_ok",
+            )
             if st.button("Elimina categoria", key="cat_del_btn") and ok_del:
                 if data.delete_category(cid_del):
                     st.success(f"{cid_del} eliminata.")
@@ -296,7 +299,10 @@ with tab_lezioni:
                     "Lezione", options=list(vista["lesson_id"]),
                     format_func=_label_les, key="les_del_sel",
                 )
-                conferma = st.checkbox("Seleziona la casella se sei sicura di voler cancellare", key="les_del_ok")
+                conferma = st.checkbox(
+                    "Seleziona la casella se sei sicura di voler cancellare",
+                    key="les_del_ok",
+                )
                 if st.button("Elimina lezione", key="les_del_btn") and conferma:
                     if data.delete_lesson(da_eliminare):
                         st.success(f"{da_eliminare} eliminata.")
@@ -310,6 +316,7 @@ with tab_lezioni:
 with tab_pren:
     if bookings.empty:
         st.info("Nessuna prenotazione.")
+        merged = pd.DataFrame()
     else:
         merged = bookings.merge(lessons, on="lesson_id", how="left")
         merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
@@ -410,60 +417,256 @@ with tab_pren:
                 mime="text/csv", key="dl_pren",
             )
 
-        st.divider()
-        st.subheader("Annulla una prenotazione")
-        st.divider()
-        st.subheader("Annulla una prenotazione")
+    # ---------- aggiungi presenza ----------
+    st.divider()
+    with st.expander("➕  Aggiungi una presenza"):
+        st.caption(
+            "Per chi si è presentato senza prenotare. "
+            "La lezione viene scalata dal suo saldo."
+        )
 
-        annullabili = merged[merged["status"] != "cancelled"].copy()
+        recenti = (
+            lessons[lessons["date"] >= date.today() - timedelta(days=30)]
+            if not lessons.empty else lessons
+        )
+        if not recenti.empty:
+            recenti = recenti.sort_values("date", ascending=False)
+
+        if recenti.empty:
+            st.info("Nessuna lezione disponibile.")
+        else:
+            noti = pd.DataFrame(columns=["email", "name"])
+            if not bookings.empty:
+                noti = (
+                    bookings.groupby("email", as_index=False)
+                    .agg(name=("name", "last"))
+                    .sort_values("name")
+                )
+
+            opz_noti = ["— nuova persona —"] + list(noti["email"])
+            sel_pres = st.selectbox(
+                "Persona",
+                options=opz_noti,
+                format_func=lambda e: (
+                    e if e == "— nuova persona —"
+                    else f"{noti.loc[noti['email'] == e, 'name'].iloc[0]} ({e})"
+                ),
+                key="pres_persona",
+            )
+
+            if sel_pres != "— nuova persona —":
+                pres_email_pre = sel_pres
+                pres_name_pre = noti.loc[noti["email"] == sel_pres, "name"].iloc[0]
+            else:
+                pres_email_pre, pres_name_pre = "", ""
+
+            sfx = sel_pres.replace("@", "_").replace(".", "_")
+
+            def _label_pres(lid: str) -> str:
+                r = recenti[recenti["lesson_id"] == lid].iloc[0]
+                return f"{r['title']} · {r['date'].strftime('%d/%m/%Y')} ore {r['time']}"
+
+            with st.form("nuova_presenza"):
+                lid_pres = st.selectbox(
+                    "Lezione",
+                    options=list(recenti["lesson_id"]),
+                    format_func=_label_pres,
+                    key="pres_lezione",
+                )
+                pc1, pc2 = st.columns(2)
+                pres_name = pc1.text_input(
+                    "Nome e cognome", value=pres_name_pre, key=f"pres_name_{sfx}"
+                )
+                pres_email = pc2.text_input(
+                    "Email", value=pres_email_pre, key=f"pres_email_{sfx}"
+                )
+                ok_pres = st.form_submit_button("Aggiungi presenza", type="primary")
+
+            if ok_pres:
+                if "@" not in pres_email:
+                    st.error("Email non valida.")
+                elif not pres_name.strip():
+                    st.error("Inserisci il nome.")
+                elif data.already_booked(lid_pres, pres_email):
+                    st.warning("Questa persona risulta già iscritta a questa lezione.")
+                else:
+                    lez = recenti[recenti["lesson_id"] == lid_pres].iloc[0]
+                    bid = data.add_manual_booking(lid_pres, pres_name, pres_email)
+                    saldo = data.balance_live(pres_email, str(lez["category_id"]))
+                    st.success(
+                        f"Presenza {bid} registrata per {pres_name}. "
+                        f"Saldo {lez['title']}: {saldo}."
+                    )
+                    st.rerun()
+
+    # ---------- presenza fuori calendario ----------
+    with st.expander("➕  Presenza fuori calendario"):
+        st.caption(
+            "Per una lezione che non è nel gestionale: la creo io e ci aggancio "
+            "la presenza, così il saldo si scala."
+        )
+
+        if categories.empty:
+            st.warning("Crea prima almeno una categoria.")
+        else:
+            noti_fc = pd.DataFrame(columns=["email", "name"])
+            if not bookings.empty:
+                noti_fc = (
+                    bookings.groupby("email", as_index=False)
+                    .agg(name=("name", "last"))
+                    .sort_values("name")
+                )
+
+            opz_fc = ["— nuova persona —"] + list(noti_fc["email"])
+            sel_fc = st.selectbox(
+                "Persona",
+                options=opz_fc,
+                format_func=lambda e: (
+                    e if e == "— nuova persona —"
+                    else f"{noti_fc.loc[noti_fc['email'] == e, 'name'].iloc[0]} ({e})"
+                ),
+                key="fc_persona",
+            )
+
+            if sel_fc != "— nuova persona —":
+                fc_email_pre = sel_fc
+                fc_name_pre = noti_fc.loc[noti_fc["email"] == sel_fc, "name"].iloc[0]
+            else:
+                fc_email_pre, fc_name_pre = "", ""
+
+            sfx_fc = sel_fc.replace("@", "_").replace(".", "_")
+
+            con_data = st.checkbox("Conosco la data", value=True, key="fc_con_data")
+
+            with st.form("presenza_fuori_calendario"):
+                fc_cat = st.selectbox(
+                    "Categoria",
+                    options=list(categories["category_id"]),
+                    format_func=lambda c: (
+                        categories.loc[categories["category_id"] == c, "name"].iloc[0]
+                    ),
+                    key="fc_cat",
+                )
+
+                if con_data:
+                    fd1, fd2 = st.columns(2)
+                    fc_date = fd1.date_input("Data", value=date.today(), key="fc_date")
+                    fc_time = fd2.time_input(
+                        "Ora", value=time(18, 30), step=timedelta(minutes=15),
+                        key="fc_time",
+                    )
+                else:
+                    fc_date, fc_time = None, None
+                    st.caption("Senza data userò la data di oggi come riferimento.")
+
+                fc1, fc2 = st.columns(2)
+                fc_name = fc1.text_input(
+                    "Nome e cognome", value=fc_name_pre, key=f"fc_name_{sfx_fc}"
+                )
+                fc_email = fc2.text_input(
+                    "Email", value=fc_email_pre, key=f"fc_email_{sfx_fc}"
+                )
+                fc_note = st.text_input(
+                    "Nota (facoltativa)",
+                    placeholder="es. lezione privata, sostituzione",
+                    key="fc_note",
+                )
+                ok_fc = st.form_submit_button("Registra presenza", type="primary")
+
+            if ok_fc:
+                if "@" not in fc_email:
+                    st.error("Email non valida.")
+                elif not fc_name.strip():
+                    st.error("Inserisci il nome.")
+                else:
+                    cat_fc = categories[categories["category_id"] == fc_cat].iloc[0]
+                    giorno_fc = fc_date if con_data else date.today()
+                    ora_fc = fc_time.strftime("%H:%M") if con_data else ""
+                    titolo = cat_fc["name"]
+                    if fc_note.strip():
+                        titolo = f"{titolo} ({fc_note.strip()})"
+
+                    try:
+                        lid_fc = data.add_lesson(
+                            date_str=giorno_fc.isoformat(),
+                            time_str=ora_fc,
+                            title=titolo,
+                            teacher="",
+                            capacity=1,
+                            mode=cat_fc["mode"],
+                            location=cat_fc["location"],
+                            category_id=fc_cat,
+                        )
+                        bid_fc = data.add_manual_booking(lid_fc, fc_name, fc_email)
+                        saldo = data.balance_live(fc_email, fc_cat)
+                        st.success(
+                            f"Presenza {bid_fc} registrata per {fc_name} "
+                            f"({lid_fc}). Saldo {cat_fc['name']}: {saldo}."
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Non sono riuscito a registrare: {exc}")
+
+    # ---------- annulla ----------
+    st.divider()
+    st.subheader("Annulla una prenotazione")
+
+    annullabili = (
+        merged[merged["status"] != "cancelled"].copy()
+        if not merged.empty else pd.DataFrame()
+    )
+    if not annullabili.empty:
         annullabili = annullabili.sort_values("date", na_position="last")
 
-        if annullabili.empty:
-            st.info("Nessuna prenotazione attiva.")
-        else:
-            def _label_annulla(bid: str) -> str:
-                r = annullabili[annullabili["booking_id"] == bid].iloc[0]
-                giorno = (
-                    r["date"].strftime("%d/%m/%Y")
-                    if pd.notna(r.get("date")) else "data ignota"
-                )
-                return (
-                    f"{r['name']} — {r.get('title', '?')} — "
-                    f"{giorno} ore {r.get('time', '')}"
-                )
-
-            bid_annulla = st.selectbox(
-                "Prenotazione",
-                options=list(annullabili["booking_id"]),
-                format_func=_label_annulla,
-                key="pren_sel_annulla",
+    if annullabili.empty:
+        st.info("Nessuna prenotazione attiva.")
+    else:
+        def _label_annulla(bid: str) -> str:
+            r = annullabili[annullabili["booking_id"] == bid].iloc[0]
+            giorno = (
+                r["date"].strftime("%d/%m/%Y")
+                if pd.notna(r.get("date")) else "data ignota"
             )
-            avvisa = st.checkbox(
-                "Invia email di annullamento", value=True, key="pren_avvisa"
+            return (
+                f"{r['name']} — {r.get('title', '?')} — "
+                f"{giorno} ore {r.get('time', '')}"
             )
-            conferma_ann = st.checkbox("Seleziona la casella se sei sicura di voler cancellare", key="pren_conferma")
 
-            if st.button("Annulla", type="primary", key="pren_btn") and conferma_ann:
-                r = annullabili[annullabili["booking_id"] == bid_annulla].iloc[0]
-                if data.cancel_booking(bid_annulla):
-                    st.success(f"Prenotazione di {r['name']} annullata.")
-                    if avvisa:
-                        try:
-                            mailer.send_cancellation(
-                                to=r["email"],
-                                name=r["name"],
-                                title=r.get("title", ""),
-                                date_str=(
-                                    r["date"].strftime("%d/%m/%Y")
-                                    if pd.notna(r.get("date")) else ""
-                                ),
-                                time_str=r.get("time", ""),
-                            )
-                        except Exception:
-                            st.warning("Annullata, ma l'email non è partita.")
-                    st.rerun()
-                else:
-                    st.error("Prenotazione non trovata.")
+        bid_annulla = st.selectbox(
+            "Prenotazione",
+            options=list(annullabili["booking_id"]),
+            format_func=_label_annulla,
+            key="pren_sel_annulla",
+        )
+        avvisa = st.checkbox(
+            "Invia email di annullamento", value=True, key="pren_avvisa"
+        )
+        conferma_ann = st.checkbox(
+            "Seleziona la casella se sei sicura di voler cancellare",
+            key="pren_conferma",
+        )
+
+        if st.button("Annulla", type="primary", key="pren_btn") and conferma_ann:
+            r = annullabili[annullabili["booking_id"] == bid_annulla].iloc[0]
+            if data.cancel_booking(bid_annulla):
+                st.success(f"Prenotazione di {r['name']} annullata.")
+                if avvisa:
+                    try:
+                        mailer.send_cancellation(
+                            to=r["email"],
+                            name=r["name"],
+                            title=r.get("title", ""),
+                            date_str=(
+                                r["date"].strftime("%d/%m/%Y")
+                                if pd.notna(r.get("date")) else ""
+                            ),
+                            time_str=r.get("time", ""),
+                        )
+                    except Exception:
+                        st.warning("Annullata, ma l'email non è partita.")
+                st.rerun()
+            else:
+                st.error("Prenotazione non trovata.")
 
 # =============================================================
 # PERSONE E PAGAMENTI

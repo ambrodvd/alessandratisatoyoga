@@ -301,6 +301,18 @@ def _cat_by_lesson(lessons: pd.DataFrame) -> dict:
         for lid, cid in zip(lessons["lesson_id"], lessons["category_id"])
     }
 
+def add_manual_booking(lesson_id: str, name: str, email: str) -> str:
+    """Registra una presenza inserita dall'admin (imbucato, iscrizione a voce)."""
+    booking_id = uuid.uuid4().hex[:8].upper()
+    _sheet("bookings").append_row(
+        [
+            booking_id, str(lesson_id), name.strip(), norm_email(email),
+            "", datetime.now().isoformat(timespec="seconds"), "confirmed",
+        ],
+        value_input_option="USER_ENTERED",
+    )
+    load_bookings.clear()
+    return booking_id
 
 def balance_live(email: str, category_id: str) -> int:
     """Saldo di categoria letto direttamente dal foglio, senza cache."""

@@ -38,7 +38,7 @@ c1, c2 = st.columns(2)
 
 filtro = c1.selectbox(
     "Mostra",
-    options=["questa_settimana", "prossima_settimana","tutte", "presenza", "online"],
+    options=["questa_settimana", "prossima_settimana", "tutte", "presenza", "online"],
     format_func=lambda m: {
         "tutte": "Tutte le lezioni",
         "questa_settimana": "📅 Questa settimana",
@@ -135,11 +135,35 @@ elif choice.location:
     st.info(f"📍 {choice.location}")
 
 # =============================================================
+# VALIDAZIONE
+# =============================================================
+
+
+def nome_valido(valore: str) -> str:
+    """Messaggio di errore, oppure stringa vuota se il nome va bene."""
+    pulito = " ".join(str(valore or "").split())
+    if not pulito:
+        return "Inserisci nome e cognome."
+    if not all(c.isalpha() or c in " '-." for c in pulito):
+        return "Il nome può contenere solo lettere, apostrofi e trattini."
+    parti = pulito.split(" ")
+    if len(parti) < 2:
+        return "Inserisci sia il nome che il cognome."
+    if any(len(p.replace(".", "").replace("'", "").replace("-", "")) < 2 for p in parti):
+        return "Scrivi nome e cognome per esteso, non le iniziali."
+    return ""
+
+
+# =============================================================
 # FORM
 # =============================================================
 
 with st.form("booking_form"):
-    name = st.text_input("Nome e cognome")
+    name = st.text_input(
+        "Nome e cognome",
+        placeholder="es. Maria Rossi",
+        help="Servono entrambi, per esteso.",
+    )
     email = st.text_input("Email")
     consent = st.checkbox(
         "Acconsento al trattamento dei miei dati per la gestione della prenotazione."
@@ -147,13 +171,15 @@ with st.form("booking_form"):
     submitted = st.form_submit_button("Conferma prenotazione", type="primary")
 
 if submitted:
-    if not name.strip():
-        st.error("Inserisci il tuo nome.")
+    errore_nome = nome_valido(name)
+    if errore_nome:
+        st.error(errore_nome)
     elif "@" not in email or "." not in email.split("@")[-1]:
         st.error("Inserisci un indirizzo email valido.")
     elif not consent:
         st.error("Devi accettare l'informativa per procedere.")
     else:
+        nome_pulito = " ".join(name.split()).title()
         with st.spinner("Confermo..."):
             if data.already_booked(choice.lesson_id, email):
                 st.warning("Risulti già iscritto a questa lezione.")
@@ -167,7 +193,7 @@ if submitted:
                 cat_id = choice.category_id
                 usate_prima = data.used_live(email, cat_id)
                 balance_before = data.balance_live(email, cat_id)
-                ref = data.add_booking(choice.lesson_id, name, email)
+                ref = data.add_booking(choice.lesson_id, nome_pulito, email)
                 balance_after = balance_before - 1
                 prima_volta = usate_prima == 0
 
@@ -194,13 +220,11 @@ if submitted:
                     importo = prezzo_singola * da_pagare
                     parola = "lezione" if da_pagare == 1 else "lezioni"
 
-                    importo = prezzo_singola * da_pagare
-                    parola = "lezione" if da_pagare == 1 else "lezioni"
-
                     if prima_volta:
                         st.info(
                             f"🎁 **Se è la tua prima volta in {choice.title} "
-                            "hai diritto a una lezione di prova. Non procedere con il pagamento**"
+                            "hai diritto a una lezione di prova. "
+                            "Non procedere con il pagamento.**"
                         )
 
                     st.warning(
@@ -273,7 +297,7 @@ if submitted:
                 try:
                     mailer.send_confirmation(
                         to=email,
-                        name=name.strip(),
+                        name=nome_pulito,
                         title=choice.title,
                         date_str=choice.date.strftime("%d/%m/%Y"),
                         time_str=choice.time,
@@ -289,9 +313,8 @@ if submitted:
                         "Ti ho mandato una mail di conferma. Se non la trovi, "
                         "controlla nello spam e segnala il messaggio come attendibile."
                     )
-                except Exception as exc:
+                except Exception:
                     st.warning(
                         "Prenotazione registrata, ma l'email di conferma non è "
                         f"partita. Conserva il codice {ref}."
                     )
-                    st.caption(f"Debug: {type(exc).__name__} — {exc}")
