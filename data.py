@@ -520,3 +520,26 @@ def add_recording_shares(lesson_id: str, destinatari: list, category_id: str) ->
     ]
     _sheet("recording_shares").append_rows(righe, value_input_option="RAW")
     load_recording_shares.clear()
+
+
+# =============================================================
+# PACCHETTI REGISTRAZIONI
+# =============================================================
+
+@st.cache_data(ttl=120, show_spinner=False)
+
+def load_recording_packages() -> list:
+    """Categorie in vendita nella pagina dei pacchetti registrazioni."""
+    return [
+        str(r.get("category_id", "")).strip()
+        for r in _sheet("recording_packages").get_all_records()
+        if str(r.get("category_id", "")).strip()
+    ]
+
+
+def set_recording_packages(category_ids: list) -> None:
+    ws = _sheet("recording_packages")
+    ws.clear()
+    righe = [["category_id"]] + [[str(c)] for c in category_ids]
+    ws.update("A1", righe, value_input_option="RAW")
+    load_recording_packages.clear()

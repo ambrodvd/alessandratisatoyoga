@@ -9,5 +9,8 @@ st.set_page_config(
 
 prenota = st.Page("Prenota.py", title="Prenota", icon="🧘", default=True)
 admin = st.Page("Admin.py", title="Gestione", icon="🔒")
+pacchetti = st.Page(
+    "pacchetti.py", title="Acquista un pacchetto di lezioni registrate", icon="🎬"
+)
 
-st.navigation([prenota, admin]).run()
+st.navigation([prenota, pacchetti, admin]).run()

@@ -204,3 +204,25 @@ Grazie e a presto,
 {studio}
 """
     _send(to, f"La registrazione di {categoria} del {date_str}", body)
+
+
+def send_package_purchase(
+    to: str, name: str, categoria: str, credits: int,
+    price: float, pay_link: str = "",
+) -> None:
+    studio = _cfg()["studio_name"]
+    pagamento = (
+        f"Puoi pagare qui:\n\n  {pay_link}\n\n"
+        if pay_link
+        else "Ti scrivo a breve con le indicazioni per il pagamento.\n\n"
+    )
+    body = f"""Ciao {name},
+
+grazie per aver scelto il pacchetto di {credits} lezioni registrate di {categoria}, al prezzo di € {price:.2f}.
+
+{pagamento}Dopo il pagamento aggiorno io il tuo saldo e riceverai le prossime {credits} registrazioni via mail.
+
+Grazie per aver praticato con me,
+{studio}
+"""
+    _send(to, f"Pacchetto lezioni registrate — {categoria}", body)
