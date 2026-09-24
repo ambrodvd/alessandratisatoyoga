@@ -222,7 +222,7 @@ grazie per aver scelto il pacchetto di {credits} lezioni registrate di {categori
 
 {pagamento}Dopo il pagamento aggiorno io il tuo saldo e riceverai le prossime {credits} registrazioni via mail.
 
-Grazie per aver praticato con me,
+Grazie per aver scelti di praticare con me,
 {studio}
 """
     _send(to, f"Pacchetto lezioni registrate — {categoria}", body)
