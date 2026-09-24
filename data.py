@@ -338,16 +338,28 @@ def balance_live(email: str, category_id: str) -> int:
         and mappa.get(str(r.get("lesson_id")), "") == cat
     )
 
-    return bought - used
+    extra = sum(
+        1
+        for r in _sheet("recording_shares").get_all_records()
+        if norm_email(r.get("email")) == target
+        and str(r.get("category_id", "")).strip() == cat
+    )
 
+    return bought - used - extra
 
 def balances_all(
     payments: pd.DataFrame, bookings: pd.DataFrame,
     lessons: pd.DataFrame, categories: pd.DataFrame,
+    shares: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Riepilogo per coppia (email, categoria)."""
+    """Riepilogo per coppia (email, categoria), registrazioni extra incluse."""
     colonne = ["email", "name", "categoria", "category_id",
-               "acquistati", "usati", "saldo"]
+               "acquistati", "usati", "extra", "saldo"]
+
+    if shares is None:
+        shares = load_recording_shares()
+    if not shares.empty:
+        shares = shares[shares["category_id"] != ""]
 
     mappa = _cat_by_lesson(lessons)
     nome_cat = (
@@ -366,12 +378,14 @@ def balances_all(
     if not attive.empty:
         for _, b in attive.iterrows():
             coppie.add((b["email"], mappa.get(str(b["lesson_id"]), "")))
+    if not shares.empty:
+        coppie |= set(zip(shares["email"], shares["category_id"]))
 
     if not coppie:
         return pd.DataFrame(columns=colonne)
 
     nomi = {}
-    for df in (payments, bookings):
+    for df in (payments, bookings, shares):
         if not df.empty:
             for _, r in df.iterrows():
                 if r.get("name"):
@@ -394,6 +408,11 @@ def balances_all(
                 for _, b in attive.iterrows()
                 if b["email"] == mail and mappa.get(str(b["lesson_id"]), "") == cat
             )
+        extra = 0
+        if not shares.empty:
+            extra = int(
+                ((shares["email"] == mail) & (shares["category_id"] == cat)).sum()
+            )
         righe.append({
             "email": mail,
             "name": nomi.get(mail, ""),
@@ -401,7 +420,8 @@ def balances_all(
             "category_id": cat,
             "acquistati": bought,
             "usati": used,
-            "saldo": bought - used,
+            "extra": extra,
+            "saldo": bought - used - extra,
         })
 
     return pd.DataFrame(righe, columns=colonne).sort_values(["saldo", "email"])
@@ -437,3 +457,66 @@ def bookings_of(
     return mie.merge(lessons, on="lesson_id", how="left").sort_values(
         "date", ascending=False, na_position="last"
     )
+
+
+# =============================================================
+# REGISTRAZIONI
+# =============================================================
+
+RECORDING_COLUMNS = ["lesson_id", "url", "updated_at"]
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_recordings() -> pd.DataFrame:
+    df = pd.DataFrame(_sheet("recordings").get_all_records())
+    if df.empty:
+        return pd.DataFrame(columns=RECORDING_COLUMNS)
+    df["lesson_id"] = df["lesson_id"].astype(str)
+    df["url"] = df["url"].astype(str).str.strip()
+    return df[df["url"] != ""]
+
+
+def set_recording(lesson_id: str, url: str) -> None:
+    """Salva il link della registrazione; se la lezione ce l'ha già, lo sostituisce."""
+    ws = _sheet("recordings")
+    now = datetime.now().isoformat(timespec="seconds")
+    riga = [str(lesson_id), url.strip(), now]
+    cell = ws.find(str(lesson_id), in_column=1)
+    if cell is None:
+        ws.append_row(riga, value_input_option="USER_ENTERED")
+    else:
+        ws.update(f"A{cell.row}:C{cell.row}", [riga], value_input_option="USER_ENTERED")
+    load_recordings.clear()
+
+
+SHARE_COLUMNS = ["timestamp", "lesson_id", "email", "name", "category_id"]
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_recording_shares() -> pd.DataFrame:
+    df = pd.DataFrame(_sheet("recording_shares").get_all_records())
+    if df.empty:
+        return pd.DataFrame(columns=SHARE_COLUMNS)
+    if "category_id" not in df.columns:
+        df["category_id"] = ""
+    df["lesson_id"] = df["lesson_id"].astype(str)
+    df["email"] = df["email"].map(norm_email)
+    df["name"] = df["name"].astype(str)
+    df["timestamp"] = df["timestamp"].astype(str)
+    df["category_id"] = df["category_id"].astype(str).str.strip()
+    return df
+
+
+def add_recording_shares(lesson_id: str, destinatari: list, category_id: str) -> None:
+    """Registra gli invii extra e scala 1 lezione dalla categoria indicata.
+    destinatari: [(email, nome), ...]"""
+    if not destinatari:
+        return
+    now = datetime.now().isoformat(timespec="seconds")
+    righe = [
+        [now, str(lesson_id), norm_email(email), (nome or "").strip(),
+         str(category_id).strip()]
+        for email, nome in destinatari
+    ]
+    _sheet("recording_shares").append_rows(righe, value_input_option="RAW")
+    load_recording_shares.clear()

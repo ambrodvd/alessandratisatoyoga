@@ -26,6 +26,8 @@ if st.button("Aggiorna dati"):
     data.load_bookings.clear()
     data.load_payments.clear()
     data.load_categories.clear()
+    data.load_recordings.clear()
+    data.load_recording_shares.clear()
     st.rerun()
 
 lessons = data.load_lessons()
@@ -35,8 +37,8 @@ categories = data.load_categories()
 
 PAYPAL = st.secrets.get("paypal_me", "")
 
-tab_lezioni, tab_pren, tab_persone = st.tabs(
-    ["Lezioni", "Prenotazioni", "Persone e pagamenti"]
+tab_lezioni, tab_pren, tab_persone, tab_rec = st.tabs(
+    ["Lezioni", "Prenotazioni", "Persone e pagamenti", "Lezioni registrate"]
 )
 
 # =============================================================
@@ -711,8 +713,13 @@ with tab_persone:
         st.info("Nessun dato.")
     else:
         st.dataframe(
-            balances[["name", "categoria", "acquistati", "usati", "saldo", "email"]]
-            .rename(columns={"name": "persona", "usati": "lezioni usate"}),
+            balances[["name", "categoria", "acquistati", "usati", "extra",
+                      "saldo", "email"]]
+            .rename(columns={
+                "name": "persona",
+                "usati": "lezioni usate",
+                "extra": "registrazioni",
+            }),
             use_container_width=True, hide_index=True,
         )
 
@@ -965,3 +972,346 @@ with tab_persone:
                 file_name=f"saldi_{date.today().isoformat()}.csv",
                 mime="text/csv", key="dl_saldi",
             )
+
+# =============================================================
+# LEZIONI REGISTRATE
+# =============================================================
+with tab_rec:
+    nomi_cat = (
+        dict(zip(categories["category_id"].astype(str), categories["name"]))
+        if not categories.empty else {}
+    )
+
+    def _invia_registrazione(destinatari, categoria, giorno, link, altri=False):
+        barra = st.progress(0.0)
+        inviate, fallite = [], []
+        for i, (email, nome) in enumerate(destinatari, 1):
+            try:
+                if altri:
+                    mailer.send_recording_share(
+                        to=email, name=nome or email, categoria=categoria,
+                        date_str=giorno, link=link,
+                    )
+                else:
+                    mailer.send_recording(
+                        to=email, categoria=categoria, date_str=giorno, link=link,
+                    )
+                inviate.append((email, nome))
+            except Exception as exc:
+                fallite.append(f"{nome} ({email}): {exc}")
+            barra.progress(i / len(destinatari))
+        if inviate:
+            st.success(f"Inviate {len(inviate)} mail.")
+        if fallite:
+            st.error("Non inviate:")
+            st.write("\n".join(f"- {f}" for f in fallite))
+        return inviate
+
+    # ---------- invio ai partecipanti ----------
+    st.subheader("Invia la registrazione")
+
+    if lessons.empty:
+        st.info("Nessuna lezione in calendario.")
+    else:
+        solo_online = st.checkbox(
+            "Solo lezioni online", value=True, key="rec_solo_online"
+        )
+        passate = lessons[lessons["date"] <= date.today()]
+        if solo_online:
+            passate = passate[passate["mode"] == "online"]
+        passate = passate.sort_values(["date", "time"], ascending=False)
+
+        if passate.empty:
+            st.info("Nessuna lezione passata con questi filtri.")
+        else:
+            def _label_rec(lid: str) -> str:
+                r = passate[passate["lesson_id"] == lid].iloc[0]
+                return (
+                    f"{r['title']} · {r['date'].strftime('%d/%m/%Y')} "
+                    f"ore {r['time']}"
+                )
+
+            with st.form("rec_link"):
+                rec_lid = st.selectbox(
+                    "Lezione",
+                    options=list(passate["lesson_id"]),
+                    format_func=_label_rec,
+                    key="rec_lezione",
+                )
+                rec_link = st.text_input(
+                    "Link YouTube",
+                    placeholder="https://youtu.be/...",
+                    key="rec_link_input",
+                )
+                genera = st.form_submit_button(
+                    "Genera lista partecipanti", type="primary"
+                )
+
+            if genera:
+                link = rec_link.strip()
+                if not link.startswith("http") or "youtu" not in link:
+                    st.error("Inserisci un link YouTube valido.")
+                    st.session_state.pop("rec_attiva", None)
+                else:
+                    try:
+                        data.set_recording(rec_lid, link)
+                    except Exception as exc:
+                        st.warning(f"Link non salvato sul foglio: {exc}")
+                    st.session_state.rec_attiva = {
+                        "lesson_id": rec_lid, "link": link
+                    }
+
+            attiva = st.session_state.get("rec_attiva")
+            if attiva and attiva["lesson_id"] in set(passate["lesson_id"]):
+                lez = passate[passate["lesson_id"] == attiva["lesson_id"]].iloc[0]
+                categoria = nomi_cat.get(str(lez["category_id"]), lez["title"])
+                giorno = lez["date"].strftime("%d/%m/%Y")
+
+                if bookings.empty:
+                    iscritti = pd.DataFrame(columns=["booking_id", "name", "email"])
+                else:
+                    iscritti = (
+                        bookings[
+                            (bookings["lesson_id"] == attiva["lesson_id"])
+                            & (bookings["status"] != "cancelled")
+                        ]
+                        .drop_duplicates(subset="email")
+                        .sort_values("name")
+                    )
+
+                st.divider()
+                st.markdown(f"**{categoria} del {giorno}**")
+                st.caption(
+                    f"Oggetto: La registrazione di {categoria} del {giorno} è online"
+                )
+
+                if iscritti.empty:
+                    st.info("Nessuna prenotazione attiva per questa lezione.")
+                else:
+                    with st.form("rec_invio"):
+                        selezionati = []
+                        for r in iscritti.itertuples(index=False):
+                            chk = st.checkbox(
+                                f"{r.name} ({r.email})",
+                                value=True,
+                                key=f"rec_chk_{attiva['lesson_id']}_{r.booking_id}",
+                            )
+                            if chk:
+                                selezionati.append((r.email, r.name))
+                        invia = st.form_submit_button("Invia mail", type="primary")
+
+                    if invia:
+                        if not selezionati:
+                            st.warning("Nessuna persona selezionata.")
+                        else:
+                            _invia_registrazione(
+                                selezionati, categoria, giorno, attiva["link"]
+                            )
+
+    # ---------- tabella registrazioni ----------
+    st.divider()
+    st.subheader("Registrazioni caricate")
+
+    recordings = data.load_recordings()
+
+    if recordings.empty:
+        st.info("Nessuna registrazione caricata.")
+    else:
+        reg = recordings.merge(lessons, on="lesson_id", how="left")
+        reg["categoria"] = (
+            reg["category_id"].astype(str).map(nomi_cat).fillna(reg["title"])
+        )
+        reg["giorno"] = reg["date"].map(
+            lambda d: d.strftime("%d/%m/%Y") if pd.notna(d) else "?"
+        )
+        reg = reg.sort_values(["date", "time"], ascending=False, na_position="last")
+
+        st.dataframe(
+            reg[["giorno", "time", "categoria", "url"]],
+            column_config={
+                "giorno": "data",
+                "time": "ora",
+                "url": st.column_config.LinkColumn("link"),
+            },
+            use_container_width=True, hide_index=True,
+        )
+
+        # ---------- invio ad altre persone ----------
+        st.divider()
+        st.subheader("Invia una registrazione ad altre persone")
+
+        fonti = [df[["email", "name"]] for df in (bookings, payments) if not df.empty]
+        utenti = (
+            pd.concat(fonti, ignore_index=True)
+            if fonti else pd.DataFrame(columns=["email", "name"])
+        )
+        utenti = utenti[utenti["email"].astype(str).str.contains("@")].copy()
+
+        if utenti.empty:
+            st.info("Nessun utente registrato.")
+        elif categories.empty:
+            st.warning("Crea prima almeno una categoria.")
+        else:
+            utenti["name"] = (
+                utenti["name"].astype(str).str.strip().replace("", pd.NA)
+            )
+            utenti = (
+                utenti.groupby("email", as_index=False)
+                .agg(name=("name", "last"))
+                .fillna({"name": ""})
+                .sort_values("name")
+            )
+            nome_utente = dict(zip(utenti["email"], utenti["name"]))
+
+            saldi_rec = data.balances_all(payments, bookings, lessons, categories)
+            saldo_di = {
+                (r.email, r.category_id): int(r.saldo)
+                for r in saldi_rec.itertuples(index=False)
+            }
+
+            def _label_reg(lid: str) -> str:
+                r = reg[reg["lesson_id"] == lid].iloc[0]
+                return f"{r['categoria']} · {r['giorno']} ore {r['time']}"
+
+            lid_altri = st.selectbox(
+                "Registrazione",
+                options=list(reg["lesson_id"]),
+                format_func=_label_reg,
+                key="rec_altri_lez",
+            )
+            r_sel = reg[reg["lesson_id"] == lid_altri].iloc[0]
+
+            lista_cat = list(categories["category_id"])
+            cat_lez = str(r_sel["category_id"])
+            cat_addebito = st.selectbox(
+                "Scala 1 lezione dal saldo di",
+                options=lista_cat,
+                index=lista_cat.index(cat_lez) if cat_lez in lista_cat else 0,
+                format_func=lambda c: nomi_cat.get(c, c),
+                key=f"rec_altri_cat_{lid_altri}",
+            )
+
+            def _label_dest(e: str) -> str:
+                nome = nome_utente.get(e, "")
+                chi = f"{nome} ({e})" if nome else e
+                return f"{chi} · saldo {saldo_di.get((e, cat_addebito), 0)}"
+
+            dest = st.multiselect(
+                "Destinatari",
+                options=list(utenti["email"]),
+                format_func=_label_dest,
+                placeholder="Aggiungi persone",
+                key="rec_altri_dest",
+            )
+
+            if st.button("Invia mail", type="primary", key="rec_altri_btn"):
+                if not dest:
+                    st.warning("Nessuna persona selezionata.")
+                else:
+                    inviati = _invia_registrazione(
+                        [(e, nome_utente.get(e, "")) for e in dest],
+                        r_sel["categoria"], r_sel["giorno"], r_sel["url"],
+                        altri=True,
+                    )
+                    if inviati:
+                        try:
+                            data.add_recording_shares(
+                                lid_altri, inviati, cat_addebito
+                            )
+                            st.caption(
+                                f"Scalata 1 lezione di "
+                                f"{nomi_cat.get(cat_addebito, cat_addebito)} "
+                                f"a {len(inviati)} persone."
+                            )
+                        except Exception as exc:
+                            st.warning(
+                                f"Mail inviate, ma l'invio non è stato "
+                                f"registrato sul foglio e il saldo non è "
+                                f"stato scalato: {exc}"
+                            )
+
+    # ---------- storico invii extra ----------
+    st.divider()
+    st.subheader("Registrazioni inviate ad altre persone")
+
+    shares = data.load_recording_shares()
+
+    if shares.empty:
+        st.info("Nessun invio registrato.")
+    else:
+        sh = shares.merge(
+            lessons[["lesson_id", "date", "time", "title", "category_id"]]
+            .rename(columns={"category_id": "cat_lezione"}),
+            on="lesson_id", how="left",
+        )
+        sh["categoria"] = (
+            sh["cat_lezione"].astype(str).map(nomi_cat)
+            .fillna(sh["title"]).fillna("—")
+        )
+        sh["scalata da"] = sh["category_id"].map(nomi_cat).fillna("—")
+        sh["lezione"] = sh.apply(
+            lambda r: (
+                f"{r['categoria']} · {r['date'].strftime('%d/%m/%Y')} ore {r['time']}"
+                if pd.notna(r["date"]) else f"{r['categoria']} · lezione eliminata"
+            ),
+            axis=1,
+        )
+        sh["inviata il"] = (
+            pd.to_datetime(sh["timestamp"], errors="coerce")
+            .dt.strftime("%d/%m/%Y %H:%M").fillna(sh["timestamp"])
+        )
+        sh = sh.sort_values(
+            ["date", "time", "name"], ascending=[False, False, True],
+            na_position="last",
+        )
+
+        c1, c2 = st.columns(2)
+        c1.metric("Invii totali", len(sh))
+        c2.metric("Persone", sh["email"].nunique())
+
+        st.markdown("**Per persona e categoria**")
+        saldi_now = data.balances_all(payments, bookings, lessons, categories)
+        saldo_now = {
+            (r.email, r.category_id): int(r.saldo)
+            for r in saldi_now.itertuples(index=False)
+        }
+        per_persona = (
+            sh.groupby(["email", "category_id"], as_index=False)
+            .agg(persona=("name", "last"), registrazioni=("lesson_id", "count"))
+        )
+        per_persona["categoria"] = (
+            per_persona["category_id"].map(nomi_cat).fillna("— non scalata —")
+        )
+        per_persona["saldo"] = pd.Series(
+            [
+                saldo_now.get((e, c)) if c else None
+                for e, c in zip(per_persona["email"], per_persona["category_id"])
+            ],
+            dtype="Int64",
+        )
+        per_persona = per_persona.sort_values(["persona", "categoria"])
+        st.dataframe(
+            per_persona[["persona", "email", "categoria", "registrazioni", "saldo"]]
+            .rename(columns={"registrazioni": "registrazioni"}),
+            use_container_width=True, hide_index=True,
+        )
+
+        st.markdown("**Per lezione**")
+        opz_lez = ["tutte"] + list(dict.fromkeys(sh["lesson_id"]))
+        filtro_lez = st.selectbox(
+            "Lezione",
+            options=opz_lez,
+            format_func=lambda l: (
+                "Tutte le lezioni" if l == "tutte"
+                else sh.loc[sh["lesson_id"] == l, "lezione"].iloc[0]
+            ),
+            key="share_filtro_lez",
+        )
+        vd = sh if filtro_lez == "tutte" else sh[sh["lesson_id"] == filtro_lez]
+        st.caption(f"{len(vd)} invii")
+        st.dataframe(
+            vd[["lezione", "name", "email", "scalata da", "inviata il"]].rename(
+                columns={"name": "persona"}
+            ),
+            use_container_width=True, hide_index=True,
+        )

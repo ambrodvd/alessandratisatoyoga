@@ -1,4 +1,4 @@
-"""Invio email di conferma, cancellazione, ricevuta e lezione prova."""
+"""Invio email di conferma, cancellazione, ricevuta, lezione prova e registrazione."""
 
 import smtplib
 from email.message import EmailMessage
@@ -174,3 +174,33 @@ Grazie per aver praticato con me,
 {studio}
 """
     _send(to, "Grazie per aver praticato con me", body)
+
+
+def send_recording(to: str, categoria: str, date_str: str, link: str) -> None:
+    studio = _cfg()["studio_name"]
+    body = f"""Grazie per aver partecipato a {categoria},
+
+trovi la registrazione al seguente link:
+
+  {link}
+
+Grazie per aver praticato con me,
+{studio}
+"""
+    _send(to, f"La registrazione di {categoria} del {date_str} è online", body)
+
+
+def send_recording_share(
+    to: str, name: str, categoria: str, date_str: str, link: str
+) -> None:
+    studio = _cfg()["studio_name"]
+    body = f"""Ciao {name},
+
+puoi vedere la registrazione di {categoria} al seguente link:
+
+  {link}
+
+Grazie e a presto,
+{studio}
+"""
+    _send(to, f"La registrazione di {categoria} del {date_str}", body)
