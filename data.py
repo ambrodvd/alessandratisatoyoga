@@ -351,8 +351,10 @@ def balances_all(
     payments: pd.DataFrame, bookings: pd.DataFrame,
     lessons: pd.DataFrame, categories: pd.DataFrame,
     shares: pd.DataFrame | None = None,
+    requests: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Riepilogo per coppia (email, categoria), registrazioni extra incluse."""
+    """Riepilogo per coppia (email, categoria): registrazioni extra e
+    richieste di pacchetto incluse."""
     colonne = ["email", "name", "categoria", "category_id",
                "acquistati", "usati", "extra", "saldo"]
 
@@ -360,6 +362,11 @@ def balances_all(
         shares = load_recording_shares()
     if not shares.empty:
         shares = shares[shares["category_id"] != ""]
+
+    if requests is None:
+        requests = load_package_requests()
+    if not requests.empty:
+        requests = requests[requests["category_id"] != ""]
 
     mappa = _cat_by_lesson(lessons)
     nome_cat = (
@@ -380,12 +387,14 @@ def balances_all(
             coppie.add((b["email"], mappa.get(str(b["lesson_id"]), "")))
     if not shares.empty:
         coppie |= set(zip(shares["email"], shares["category_id"]))
+    if not requests.empty:
+        coppie |= set(zip(requests["email"], requests["category_id"]))
 
     if not coppie:
         return pd.DataFrame(columns=colonne)
 
     nomi = {}
-    for df in (payments, bookings, shares):
+    for df in (requests, payments, bookings, shares):
         if not df.empty:
             for _, r in df.iterrows():
                 if r.get("name"):
@@ -543,3 +552,30 @@ def set_recording_packages(category_ids: list) -> None:
     righe = [["category_id"]] + [[str(c)] for c in category_ids]
     ws.update("A1", righe, value_input_option="RAW")
     load_recording_packages.clear()
+
+
+REQUEST_COLUMNS = ["timestamp", "email", "name", "category_id"]
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_package_requests() -> pd.DataFrame:
+    df = pd.DataFrame(_sheet("package_requests").get_all_records())
+    if df.empty:
+        return pd.DataFrame(columns=REQUEST_COLUMNS)
+    df["email"] = df["email"].map(norm_email)
+    df["name"] = df["name"].astype(str)
+    df["category_id"] = df["category_id"].astype(str).str.strip()
+    df["timestamp"] = df["timestamp"].astype(str)
+    return df
+
+
+def add_package_request(email: str, name: str, category_id: str) -> None:
+    """Registra chi ha richiesto un pacchetto dalla pagina pubblica."""
+    _sheet("package_requests").append_row(
+        [
+            datetime.now().isoformat(timespec="seconds"),
+            norm_email(email), name.strip(), str(category_id).strip(),
+        ],
+        value_input_option="RAW",
+    )
+    load_package_requests.clear()

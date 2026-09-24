@@ -29,6 +29,7 @@ if st.button("Aggiorna dati"):
     data.load_recordings.clear()
     data.load_recording_shares.clear()
     data.load_recording_packages.clear()
+    data.load_package_requests.clear()
     st.rerun()
 
 lessons = data.load_lessons()
@@ -1143,7 +1144,11 @@ with tab_rec:
         st.divider()
         st.subheader("Invia una registrazione ad altre persone")
 
-        fonti = [df[["email", "name"]] for df in (bookings, payments) if not df.empty]
+        fonti = [
+            df[["email", "name"]]
+            for df in (bookings, payments, data.load_package_requests())
+            if not df.empty
+        ]
         utenti = (
             pd.concat(fonti, ignore_index=True)
             if fonti else pd.DataFrame(columns=["email", "name"])

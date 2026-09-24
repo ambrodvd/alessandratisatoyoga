@@ -104,11 +104,15 @@ if submitted:
         base = st.secrets.get("paypal_me", "")
         pay_link = f"{base}/{prezzo:.2f}EUR" if base else ""
 
+        try:
+            data.add_package_request(email_pulita, nome_pulito, scelta)
+        except Exception:
+            pass  # la richiesta non blocca il pagamento
+
         st.success(
             f"Richiesta ricevuta — pacchetto {pack['name']}, "
             f"{crediti} lezioni registrate."
         )
-
         if pay_link:
             st.markdown(f"**€ {prezzo:.2f}** — [Paga con PayPal]({pay_link})")
         else:
