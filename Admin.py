@@ -1241,7 +1241,9 @@ with tab_rec:
 
                 # ---------- invio a chi ha saldo positivo ----------
                 if st.checkbox(
-                    "Invia lezione a persone con saldo positivo", key="rec_pos_on"
+                    "Invia lezione a persone con saldo positivo",
+                    value=True,
+                    key="rec_pos_on",
                 ):
                     cat_pos = st.selectbox(
                         "Categoria",
