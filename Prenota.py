@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -19,7 +20,21 @@ if lessons.empty:
     st.info("Nessuna lezione in programma.")
     st.stop()
 
-upcoming = lessons[lessons["date"] >= date.today()]
+ADESSO = datetime.now(ZoneInfo("Europe/Rome")).replace(tzinfo=None)
+
+
+def inizio_lezione(giorno, ora) -> datetime:
+    """Data e ora di inizio; se l'ora manca, la lezione resta aperta fino a fine giornata."""
+    try:
+        hh, mm = str(ora).strip().split(":")[:2]
+        return datetime.combine(giorno, time(int(hh), int(mm)))
+    except (ValueError, TypeError):
+        return datetime.combine(giorno, time(23, 59))
+
+
+upcoming = lessons[
+    [inizio_lezione(d, t) > ADESSO for d, t in zip(lessons["date"], lessons["time"])]
+]
 if upcoming.empty:
     st.info("Nessuna lezione in programma.")
     st.stop()
@@ -59,7 +74,7 @@ ordine = c2.selectbox(
     key="filtro_ordine",
 )
 
-oggi = date.today()
+oggi = ADESSO.date()
 domenica = oggi + timedelta(days=6 - oggi.weekday())
 
 if filtro in ("presenza", "online"):

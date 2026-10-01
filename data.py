@@ -482,6 +482,9 @@ def load_recordings() -> pd.DataFrame:
         return pd.DataFrame(columns=RECORDING_COLUMNS)
     df["lesson_id"] = df["lesson_id"].astype(str)
     df["url"] = df["url"].astype(str).str.strip()
+    if "live_sent_at" not in df.columns:
+        df["live_sent_at"] = ""
+    df["live_sent_at"] = df["live_sent_at"].astype(str).str.strip()
     return df[df["url"] != ""]
 
 
@@ -497,6 +500,16 @@ def set_recording(lesson_id: str, url: str) -> None:
         ws.update(f"A{cell.row}:C{cell.row}", [riga], value_input_option="USER_ENTERED")
     load_recordings.clear()
 
+
+def mark_live_sent(lesson_id: str) -> bool:
+    """Segna che la registrazione è stata inviata ai presenti LIVE."""
+    ws = _sheet("recordings")
+    cell = ws.find(str(lesson_id), in_column=1)
+    if cell is None:
+        return False
+    ws.update_cell(cell.row, 4, datetime.now().isoformat(timespec="seconds"))
+    load_recordings.clear()
+    return True
 
 SHARE_COLUMNS = ["timestamp", "lesson_id", "email", "name", "category_id"]
 
