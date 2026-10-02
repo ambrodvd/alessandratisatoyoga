@@ -39,6 +39,12 @@ categories = data.load_categories()
 
 PAYPAL = st.secrets.get("paypal_me", "")
 
+MODALITA = {
+    "presenza": "📍 In presenza",
+    "online": "💻 Online",
+    "privata": "🔒 Lezione privata",
+}
+
 tab_lezioni, tab_pren, tab_persone, tab_rec, tab_pack = st.tabs(
     ["Modifica calendario", "Prenotazioni e private", "Persone e pagamenti",
      "Gestione registrazioni", "Pacchetti registrazioni"]
@@ -61,8 +67,8 @@ with tab_lezioni:
 
         cat_mode = st.radio(
             "Modalità",
-            options=["presenza", "online"],
-            format_func=lambda m: "📍 In presenza" if m == "presenza" else "💻 Online",
+            options=list(MODALITA),
+            format_func=lambda m: MODALITA[m],
             horizontal=True,
             key="cat_mode_new",
         )
@@ -125,9 +131,9 @@ with tab_lezioni:
 
             e_mode = st.radio(
                 "Modalità",
-                options=["presenza", "online"],
-                index=0 if row["mode"] != "online" else 1,
-                format_func=lambda m: "📍 In presenza" if m == "presenza" else "💻 Online",
+                options=list(MODALITA),
+                index=list(MODALITA).index(row["mode"]) if row["mode"] in MODALITA else 0,
+                format_func=lambda m: MODALITA[m],
                 horizontal=True,
                 key="cat_mode_edit",
             )
@@ -326,8 +332,12 @@ with tab_pren:
             "la presenza, così il saldo si scala."
         )
 
-        if categories.empty:
-            st.warning("Crea prima almeno una categoria.")
+        cat_private = (
+            categories[categories["mode"] == "privata"]
+            if not categories.empty else categories
+        )
+        if cat_private.empty:
+            st.warning("Crea prima almeno una categoria di tipo «Lezione privata».")
         else:
             noti_fc = pd.DataFrame(columns=["email", "name"])
             if not bookings.empty:
@@ -360,7 +370,7 @@ with tab_pren:
 
             fc_cat = st.selectbox(
                 "Categoria",
-                options=list(categories["category_id"]),
+                options=list(cat_private["category_id"]),
                 format_func=lambda c: (
                     categories.loc[categories["category_id"] == c, "name"].iloc[0]
                 ),
