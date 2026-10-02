@@ -132,7 +132,10 @@ with tab_lezioni:
             e_mode = st.radio(
                 "Modalità",
                 options=list(MODALITA),
-                index=list(MODALITA).index(row["mode"]) if row["mode"] in MODALITA else 0,
+                index=(
+                    list(MODALITA).index(row["mode"])
+                    if row["mode"] in MODALITA else 0
+                ),
                 format_func=lambda m: MODALITA[m],
                 horizontal=True,
                 key="cat_mode_edit",
@@ -336,6 +339,7 @@ with tab_pren:
             categories[categories["mode"] == "privata"]
             if not categories.empty else categories
         )
+
         if cat_private.empty:
             st.warning("Crea prima almeno una categoria di tipo «Lezione privata».")
         else:
@@ -735,7 +739,7 @@ with tab_pren:
                 st.rerun()
             else:
                 st.error("Prenotazione non trovata.")
-                
+
 # =============================================================
 # PERSONE E PAGAMENTI
 # =============================================================

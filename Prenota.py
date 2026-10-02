@@ -16,6 +16,10 @@ except Exception:
     st.error("Impossibile caricare il calendario. Riprova tra un momento.")
     st.stop()
 
+# le lezioni private si gestiscono solo dalla pagina di gestione
+if not lessons.empty:
+    lessons = lessons[lessons["mode"] != "privata"]
+
 if lessons.empty:
     st.info("Nessuna lezione in programma.")
     st.stop()
