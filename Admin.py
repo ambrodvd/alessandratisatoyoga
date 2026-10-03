@@ -45,6 +45,13 @@ MODALITA = {
     "privata": "🔒 Lezione privata",
 }
 
+
+def _nome_cat(cid: str) -> str:
+    """Nome della categoria a partire dall'ID (per le etichette dei pulsanti)."""
+    match = categories.loc[categories["category_id"] == cid, "name"]
+    return match.iloc[0] if not match.empty else str(cid)
+
+
 tab_lezioni, tab_pren, tab_persone, tab_rec, tab_pack = st.tabs(
     ["Modifica calendario", "Prenotazioni e private", "Persone e pagamenti",
      "Gestione registrazioni", "Pacchetti registrazioni"]
@@ -117,78 +124,93 @@ with tab_lezioni:
             st.dataframe(categories, use_container_width=True, hide_index=True)
 
             def _label_cat(cid: str) -> str:
-                nome = categories.loc[categories["category_id"] == cid, "name"].iloc[0]
-                return f"{cid} · {nome}"
+                return f"{cid} · {_nome_cat(cid)}"
 
             st.markdown("**Modifica una categoria**")
-            cid_sel = st.selectbox(
+            cid_sel = st.pills(
                 "Categoria",
                 options=list(categories["category_id"]),
                 format_func=_label_cat,
-                key="cat_edit_sel",
-            )
-            row = categories[categories["category_id"] == cid_sel].iloc[0]
-
-            e_mode = st.radio(
-                "Modalità",
-                options=list(MODALITA),
-                index=(
-                    list(MODALITA).index(row["mode"])
-                    if row["mode"] in MODALITA else 0
-                ),
-                format_func=lambda m: MODALITA[m],
-                horizontal=True,
-                key="cat_mode_edit",
+                selection_mode="single",
+                default=None,
+                key="cat_edit_pills",
             )
 
-            with st.form("modifica_categoria"):
-                e_name = st.text_input("Nome", value=row["name"], key="cat_e_name")
-                e_location = st.text_input(
-                    "Link Zoom" if e_mode == "online" else "Luogo",
-                    value=row["location"], key="cat_e_location",
-                )
-                d1, d2, d3 = st.columns(3)
-                e_single = d1.number_input(
-                    "Prezzo singola €", min_value=0.0,
-                    value=float(row["price_single"]), step=1.0, key="cat_e_single",
-                )
-                e_pack = d2.number_input(
-                    "Prezzo pacchetto €", min_value=0.0,
-                    value=float(row["price_package"]), step=5.0, key="cat_e_pack",
-                )
-                e_credits = d3.number_input(
-                    "Lezioni nel pacchetto", min_value=1, max_value=100,
-                    value=int(row["package_credits"]) or 10, key="cat_e_credits",
-                )
-                salva = st.form_submit_button("Salva modifiche")
+            if cid_sel is None:
+                st.caption("Scegli la categoria da modificare.")
+            else:
+                row = categories[categories["category_id"] == cid_sel].iloc[0]
 
-            if salva:
-                if data.update_category(
-                    category_id=cid_sel, name=e_name, mode=e_mode,
-                    location=e_location, price_single=e_single,
-                    price_package=e_pack, package_credits=int(e_credits),
-                ):
-                    st.success("Categoria aggiornata.")
-                    st.caption(
-                        "Le lezioni già create mantengono i dati precedenti: "
-                        "la modifica vale per quelle nuove."
+                e_mode = st.radio(
+                    "Modalità",
+                    options=list(MODALITA),
+                    index=(
+                        list(MODALITA).index(row["mode"])
+                        if row["mode"] in MODALITA else 0
+                    ),
+                    format_func=lambda m: MODALITA[m],
+                    horizontal=True,
+                    key=f"cat_mode_edit_{cid_sel}",
+                )
+
+                with st.form("modifica_categoria"):
+                    e_name = st.text_input(
+                        "Nome", value=row["name"], key=f"cat_e_name_{cid_sel}"
                     )
-                    st.rerun()
-                else:
-                    st.error("Categoria non trovata.")
+                    e_location = st.text_input(
+                        "Link Zoom" if e_mode == "online" else "Luogo",
+                        value=row["location"], key=f"cat_e_location_{cid_sel}",
+                    )
+                    d1, d2, d3 = st.columns(3)
+                    e_single = d1.number_input(
+                        "Prezzo singola €", min_value=0.0,
+                        value=float(row["price_single"]), step=1.0,
+                        key=f"cat_e_single_{cid_sel}",
+                    )
+                    e_pack = d2.number_input(
+                        "Prezzo pacchetto €", min_value=0.0,
+                        value=float(row["price_package"]), step=5.0,
+                        key=f"cat_e_pack_{cid_sel}",
+                    )
+                    e_credits = d3.number_input(
+                        "Lezioni nel pacchetto", min_value=1, max_value=100,
+                        value=int(row["package_credits"]) or 10,
+                        key=f"cat_e_credits_{cid_sel}",
+                    )
+                    salva = st.form_submit_button("Salva modifiche")
+
+                if salva:
+                    if data.update_category(
+                        category_id=cid_sel, name=e_name, mode=e_mode,
+                        location=e_location, price_single=e_single,
+                        price_package=e_pack, package_credits=int(e_credits),
+                    ):
+                        st.success("Categoria aggiornata.")
+                        st.caption(
+                            "Le lezioni già create mantengono i dati precedenti: "
+                            "la modifica vale per quelle nuove."
+                        )
+                        st.rerun()
+                    else:
+                        st.error("Categoria non trovata.")
 
             st.markdown("**Elimina una categoria**")
-            cid_del = st.selectbox(
+            cid_del = st.pills(
                 "Categoria da eliminare",
                 options=list(categories["category_id"]),
-                format_func=_label_cat, key="cat_del_sel",
+                format_func=_label_cat,
+                selection_mode="single",
+                default=None,
+                key="cat_del_pills",
             )
             ok_del = st.checkbox(
                 "Seleziona la casella se sei sicura di voler cancellare",
                 key="cat_del_ok",
             )
             if st.button("Elimina categoria", key="cat_del_btn") and ok_del:
-                if data.delete_category(cid_del):
+                if cid_del is None:
+                    st.error("Scegli la categoria da eliminare.")
+                elif data.delete_category(cid_del):
                     st.success(f"{cid_del} eliminata.")
                     st.rerun()
                 else:
@@ -214,9 +236,13 @@ with tab_lezioni:
                 return f"{r['name']} · {dove}"
 
             with st.form("nuova_lezione"):
-                l_cat = st.selectbox(
-                    "Categoria", options=list(categories["category_id"]),
-                    format_func=_label_cat_new, key="les_cat",
+                l_cat = st.pills(
+                    "Categoria",
+                    options=list(categories["category_id"]),
+                    format_func=_label_cat_new,
+                    selection_mode="single",
+                    default=None,
+                    key="les_cat_pills",
                 )
                 c1, c2 = st.columns(2)
                 l_teacher = c1.text_input(
@@ -244,29 +270,32 @@ with tab_lezioni:
                 crea = st.form_submit_button("Crea", type="primary")
 
             if crea:
-                cat = categories[categories["category_id"] == l_cat].iloc[0]
-                creati, errori = [], []
-                for i in range(int(ripetizioni)):
-                    giorno = l_date + timedelta(weeks=i)
-                    try:
-                        lid = data.add_lesson(
-                            date_str=giorno.isoformat(),
-                            time_str=l_time.strftime("%H:%M"),
-                            title=cat["name"], teacher=l_teacher,
-                            capacity=int(l_capacity), mode=cat["mode"],
-                            location=cat["location"], category_id=l_cat,
-                        )
-                        creati.append(f"{lid} — {giorno.strftime('%d/%m/%Y')}")
-                    except Exception as exc:
-                        errori.append(f"{giorno.strftime('%d/%m/%Y')}: {exc}")
+                if l_cat is None:
+                    st.error("Scegli una categoria.")
+                else:
+                    cat = categories[categories["category_id"] == l_cat].iloc[0]
+                    creati, errori = [], []
+                    for i in range(int(ripetizioni)):
+                        giorno = l_date + timedelta(weeks=i)
+                        try:
+                            lid = data.add_lesson(
+                                date_str=giorno.isoformat(),
+                                time_str=l_time.strftime("%H:%M"),
+                                title=cat["name"], teacher=l_teacher,
+                                capacity=int(l_capacity), mode=cat["mode"],
+                                location=cat["location"], category_id=l_cat,
+                            )
+                            creati.append(f"{lid} — {giorno.strftime('%d/%m/%Y')}")
+                        except Exception as exc:
+                            errori.append(f"{giorno.strftime('%d/%m/%Y')}: {exc}")
 
-                if creati:
-                    st.success(f"Create {len(creati)} lezioni.")
-                    st.write("\n".join(f"- {c}" for c in creati))
-                if errori:
-                    st.error("Alcune non sono state create:")
-                    st.write("\n".join(f"- {e}" for e in errori))
-                data.load_lessons.clear()
+                    if creati:
+                        st.success(f"Create {len(creati)} lezioni.")
+                        st.write("\n".join(f"- {c}" for c in creati))
+                    if errori:
+                        st.error("Alcune non sono state create:")
+                        st.write("\n".join(f"- {e}" for e in errori))
+                    data.load_lessons.clear()
 
         st.divider()
         st.subheader("Calendario")
@@ -328,6 +357,7 @@ with tab_lezioni:
 # PRENOTAZIONI E PRIVATE
 # =============================================================
 with tab_pren:
+
     # ---------- lezione privata ----------
     with st.expander("➕  Aggiungi lezione privata"):
         st.caption(
@@ -335,13 +365,16 @@ with tab_pren:
             "la presenza, così il saldo si scala."
         )
 
-        cat_private = (
-            categories[categories["mode"] == "privata"]
-            if not categories.empty else categories
-        )
+        GIORNI_IT = [
+            "lunedì", "martedì", "mercoledì", "giovedì",
+            "venerdì", "sabato", "domenica",
+        ]
 
-        if cat_private.empty:
-            st.warning("Crea prima almeno una categoria di tipo «Lezione privata».")
+        def _fmt_giorno(d) -> str:
+            return f"{GIORNI_IT[d.weekday()]} {d.strftime('%d/%m/%Y')}"
+
+        if categories.empty:
+            st.warning("Crea prima almeno una categoria.")
         else:
             noti_fc = pd.DataFrame(columns=["email", "name"])
             if not bookings.empty:
@@ -372,24 +405,76 @@ with tab_pren:
 
             con_data = st.checkbox("Conosco la data", value=True, key="fc_con_data")
 
-            fc_cat = st.selectbox(
-                "Categoria",
-                options=list(cat_private["category_id"]),
-                format_func=lambda c: (
-                    categories.loc[categories["category_id"] == c, "name"].iloc[0]
-                ),
-                key="fc_cat",
-            )
+            cat_private = categories[categories["mode"] == "privata"]
 
-            if con_data:
-                fd1, fd2 = st.columns(2)
-                fc_date = fd1.date_input("Data", value=date.today(), key="fc_date")
-                fc_time = fd2.time_input(
-                    "Ora", value=time(18, 30), step=timedelta(minutes=15),
-                    key="fc_time",
+            if cat_private.empty:
+                st.warning(
+                    "Nessuna categoria privata. Creane una con modalità «privata» "
+                    "in Modifica calendario → Categorie."
                 )
+                fc_cat = None
             else:
-                fc_date, fc_time = None, None
+                fc_cat = st.pills(
+                    "Categoria",
+                    options=list(cat_private["category_id"]),
+                    format_func=_nome_cat,
+                    selection_mode="single",
+                    default=None,
+                    key="fc_cat_pills",
+                )
+
+            # ---- date ----
+            if con_data:
+                ripeti_fc = st.radio(
+                    "Quando",
+                    options=["singola", "settimanale", "date"],
+                    format_func=lambda m: {
+                        "singola": "Una data",
+                        "settimanale": "Ogni settimana",
+                        "date": "Più date",
+                    }[m],
+                    horizontal=True,
+                    key="fc_ripeti",
+                )
+
+                if ripeti_fc == "date":
+                    opz_date = [
+                        date.today() + timedelta(days=i) for i in range(-60, 366)
+                    ]
+                    fc_date_multi = st.multiselect(
+                        "Date",
+                        options=opz_date,
+                        format_func=_fmt_giorno,
+                        placeholder="Scegli una o più date",
+                        key="fc_date_multi",
+                    )
+                    fc_time = st.time_input(
+                        "Ora", value=time(18, 30), step=timedelta(minutes=15),
+                        key="fc_time",
+                    )
+                    giorni_fc = sorted(fc_date_multi)
+                else:
+                    fd1, fd2 = st.columns(2)
+                    fc_date = fd1.date_input("Data", value=date.today(), key="fc_date")
+                    fc_time = fd2.time_input(
+                        "Ora", value=time(18, 30), step=timedelta(minutes=15),
+                        key="fc_time",
+                    )
+                    if ripeti_fc == "settimanale":
+                        n_sett_fc = st.number_input(
+                            "Numero di settimane", min_value=1, max_value=52,
+                            value=4, key="fc_n_sett",
+                        )
+                        giorni_fc = [
+                            fc_date + timedelta(weeks=i) for i in range(int(n_sett_fc))
+                        ]
+                    else:
+                        giorni_fc = [fc_date]
+
+                ora_fc = fc_time.strftime("%H:%M")
+            else:
+                giorni_fc = [date.today()]
+                ora_fc = ""
                 st.caption("Senza data userò la data di oggi come riferimento.")
 
             fc1, fc2 = st.columns(2)
@@ -406,91 +491,122 @@ with tab_pren:
             )
 
             # ---- riepilogo ----
-            cat_fc = categories[categories["category_id"] == fc_cat].iloc[0]
-            giorno_fc = fc_date if con_data else date.today()
-            ora_fc = fc_time.strftime("%H:%M") if con_data else ""
-            titolo = cat_fc["name"]
-            if fc_note.strip():
-                titolo = f"{titolo} ({fc_note.strip()})"
+            if fc_cat is None:
+                st.info("Scegli una categoria per vedere il riepilogo e registrare.")
+            else:
+                cat_fc = categories[categories["category_id"] == fc_cat].iloc[0]
+                titolo = cat_fc["name"]
+                if fc_note.strip():
+                    titolo = f"{titolo} ({fc_note.strip()})"
+                n_fc = len(giorni_fc)
 
-            email_fc = data.norm_email(fc_email)
-            saldo_fc = None
-            if "@" in email_fc:
-                saldi_fc = data.balances_all(payments, bookings, lessons, categories)
-                m_fc = saldi_fc[
-                    (saldi_fc["email"] == email_fc)
-                    & (saldi_fc["category_id"] == fc_cat)
-                ]
-                saldo_fc = int(m_fc["saldo"].iloc[0]) if not m_fc.empty else 0
-
-            prezzo_singola_fc = float(cat_fc["price_single"])
-            prezzo_pack_fc = float(cat_fc["price_package"])
-            crediti_pack_fc = int(cat_fc["package_credits"])
-
-            costi_fc = f"**Lezione singola:** € {prezzo_singola_fc:.2f}"
-            if crediti_pack_fc and prezzo_pack_fc:
-                costi_fc += (
-                    f"  \n**Pacchetto:** € {prezzo_pack_fc:.2f} "
-                    f"per {crediti_pack_fc} lezioni"
-                )
-            if saldo_fc is not None and saldo_fc - 1 < 0:
-                da_saldare_fc = abs(saldo_fc - 1)
-                costi_fc += (
-                    f"  \n**Da saldare dopo questa lezione:** {da_saldare_fc} × "
-                    f"€ {prezzo_singola_fc:.2f} = "
-                    f"**€ {da_saldare_fc * prezzo_singola_fc:.2f}**"
-                )
-
-            with st.container(border=True):
-                st.markdown("**Riepilogo**")
-                st.markdown(
-                    f"**Persona:** {fc_name.strip() or '—'}  \n"
-                    f"**Email:** {email_fc or '—'}  \n"
-                    f"**Lezione:** {titolo}  \n"
-                    f"**Data:** "
-                    f"{['lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica'][giorno_fc.weekday()]} "
-                    f"{giorno_fc.strftime('%d/%m/%Y')}"
-                    + (f" ore {ora_fc}" if ora_fc else " (data non nota, uso oggi)")
-                    + f"  \n"
-                    + (
-                        f"**Saldo {cat_fc['name']}:** {saldo_fc} → "
-                        f"**{saldo_fc - 1}**"
-                        if saldo_fc is not None
-                        else "**Saldo:** inserisci l'email per vederlo"
+                email_fc = data.norm_email(fc_email)
+                saldo_fc = None
+                if "@" in email_fc:
+                    saldi_fc = data.balances_all(
+                        payments, bookings, lessons, categories
                     )
-                )
-                st.divider()
-                st.markdown(costi_fc)
+                    m_fc = saldi_fc[
+                        (saldi_fc["email"] == email_fc)
+                        & (saldi_fc["category_id"] == fc_cat)
+                    ]
+                    saldo_fc = int(m_fc["saldo"].iloc[0]) if not m_fc.empty else 0
 
-            if st.button("Registra presenza", type="primary", key="fc_registra"):
-                if "@" not in fc_email:
-                    st.error("Email non valida.")
-                elif not fc_name.strip():
-                    st.error("Inserisci il nome.")
+                if n_fc == 0:
+                    date_txt = "**Date:** nessuna data selezionata"
+                elif n_fc == 1:
+                    date_txt = (
+                        f"**Data:** {_fmt_giorno(giorni_fc[0])}"
+                        + (f" ore {ora_fc}" if ora_fc else " (data non nota, uso oggi)")
+                    )
                 else:
-                    registrata = False
-                    try:
-                        lid_fc = data.add_lesson(
-                            date_str=giorno_fc.isoformat(),
-                            time_str=ora_fc,
-                            title=titolo,
-                            teacher="",
-                            capacity=1,
-                            mode=cat_fc["mode"],
-                            location=cat_fc["location"],
-                            category_id=fc_cat,
+                    date_txt = (
+                        f"**Date ({n_fc}), ore {ora_fc}:**  \n"
+                        + "  \n".join(f"· {_fmt_giorno(g)}" for g in giorni_fc)
+                    )
+
+                prezzo_singola_fc = float(cat_fc["price_single"])
+                prezzo_pack_fc = float(cat_fc["price_package"])
+                crediti_pack_fc = int(cat_fc["package_credits"])
+
+                costi_fc = f"**Lezione singola:** € {prezzo_singola_fc:.2f}"
+                if crediti_pack_fc and prezzo_pack_fc:
+                    costi_fc += (
+                        f"  \n**Pacchetto:** € {prezzo_pack_fc:.2f} "
+                        f"per {crediti_pack_fc} lezioni"
+                    )
+                if n_fc > 1:
+                    costi_fc += (
+                        f"  \n**Valore delle lezioni:** {n_fc} × "
+                        f"€ {prezzo_singola_fc:.2f} = "
+                        f"€ {n_fc * prezzo_singola_fc:.2f}"
+                    )
+                if saldo_fc is not None and saldo_fc - n_fc < 0:
+                    da_saldare_fc = abs(saldo_fc - n_fc)
+                    costi_fc += (
+                        f"  \n**Da saldare dopo queste lezioni:** {da_saldare_fc} × "
+                        f"€ {prezzo_singola_fc:.2f} = "
+                        f"**€ {da_saldare_fc * prezzo_singola_fc:.2f}**"
+                    )
+
+                with st.container(border=True):
+                    st.markdown("**Riepilogo**")
+                    st.markdown(
+                        f"**Persona:** {fc_name.strip() or '—'}  \n"
+                        f"**Email:** {email_fc or '—'}  \n"
+                        f"**Lezione:** {titolo}  \n"
+                        f"{date_txt}  \n"
+                        + (
+                            f"**Saldo {cat_fc['name']}:** {saldo_fc} → "
+                            f"**{saldo_fc - n_fc}**"
+                            if saldo_fc is not None
+                            else "**Saldo:** inserisci l'email per vederlo"
                         )
-                        bid_fc = data.add_manual_booking(lid_fc, fc_name, fc_email)
-                        saldo = data.balance_live(fc_email, fc_cat)
-                        st.success(
-                            f"Presenza {bid_fc} registrata per {fc_name} "
-                            f"({lid_fc}). Saldo {cat_fc['name']}: {saldo}."
-                        )
-                        registrata = True
-                    except Exception as exc:
-                        st.error(f"Non sono riuscito a registrare: {exc}")
-                    if registrata:
-                        st.rerun()
+                    )
+                    st.divider()
+                    st.markdown(costi_fc)
+
+                etichetta_btn = (
+                    "Registra presenza" if n_fc <= 1
+                    else f"Registra {n_fc} lezioni private"
+                )
+                if st.button(etichetta_btn, type="primary", key="fc_registra"):
+                    if "@" not in fc_email:
+                        st.error("Email non valida.")
+                    elif not fc_name.strip():
+                        st.error("Inserisci il nome.")
+                    elif n_fc == 0:
+                        st.error("Scegli almeno una data.")
+                    else:
+                        creati, errori = [], []
+                        for g in giorni_fc:
+                            try:
+                                lid_fc = data.add_lesson(
+                                    date_str=g.isoformat(),
+                                    time_str=ora_fc,
+                                    title=titolo,
+                                    teacher="",
+                                    capacity=1,
+                                    mode=cat_fc["mode"],
+                                    location=cat_fc["location"],
+                                    category_id=fc_cat,
+                                )
+                                data.add_manual_booking(lid_fc, fc_name, fc_email)
+                                creati.append(_fmt_giorno(g))
+                            except Exception as exc:
+                                errori.append(f"{_fmt_giorno(g)}: {exc}")
+
+                        if creati:
+                            saldo = data.balance_live(fc_email, fc_cat)
+                            st.success(
+                                f"Registrate {len(creati)} lezioni private per "
+                                f"{fc_name}. Saldo {cat_fc['name']}: {saldo}."
+                            )
+                        if errori:
+                            st.error("Alcune lezioni non sono state registrate:")
+                            st.write("\n".join(f"- {e}" for e in errori))
+                        if creati and not errori:
+                            st.rerun()
 
     # ---------- presenza senza prenotazione ----------
     with st.expander("➕  Aggiungi presenza per lezione senza prenotazione"):
@@ -594,7 +710,7 @@ with tab_pren:
         )
 
         st.subheader("Filtra")
-        f1, f2, f3 = st.columns(3)
+        f1, f3 = st.columns([2, 1])
         periodo = f1.selectbox(
             "Periodo",
             options=["questa_settimana", "prossima_settimana", "oggi", "giorno",
@@ -610,23 +726,17 @@ with tab_pren:
             key="pren_periodo",
         )
 
-        cat_options = ["tutte"]
-        if not categories.empty:
-            cat_options += list(categories["category_id"])
-
-        filtro_cat = f2.selectbox(
-            "Categoria",
-            options=cat_options,
-            format_func=lambda c: (
-                "Tutte le categorie"
-                if c == "tutte"
-                else categories.loc[categories["category_id"] == c, "name"].iloc[0]
-            ),
-            key="pren_categoria",
-        )
-
         solo_attive = f3.checkbox(
             "Solo confermate", value=True, key="pren_solo_attive"
+        )
+
+        filtro_cat = st.pills(
+            "Categoria (nessuna selezionata = tutte)",
+            options=list(categories["category_id"]) if not categories.empty else [],
+            format_func=_nome_cat,
+            selection_mode="single",
+            default=None,
+            key="pren_categoria_pills",
         )
 
         giorno_sel = None
@@ -648,7 +758,7 @@ with tab_pren:
         elif periodo == "giorno":
             vp = vp[vp["date"] == pd.Timestamp(giorno_sel)]
 
-        if filtro_cat != "tutte" and "category_id" in vp.columns:
+        if filtro_cat is not None and "category_id" in vp.columns:
             vp = vp[vp["category_id"].astype(str) == filtro_cat]
 
         st.caption(f"{len(vp)} prenotazioni")
@@ -1034,95 +1144,99 @@ with tab_persone:
         # ---- pagamento normale ----
         else:
             lista_cat_pag = list(categories["category_id"])
-            idx_cat = lista_cat_pag.index(pre_cat) if pre_cat in lista_cat_pag else 0
-            pag_cat = st.selectbox(
+            pag_cat = st.pills(
                 "Categoria acquistata",
                 options=lista_cat_pag,
-                index=idx_cat,
-                format_func=lambda c: (
-                    categories.loc[categories["category_id"] == c, "name"].iloc[0]
-                ),
+                format_func=_nome_cat,
+                selection_mode="single",
+                default=None,
                 key=f"pag_cat_{suffix}",
             )
-            cat_row = categories[categories["category_id"] == pag_cat].iloc[0]
-            st.caption(
-                f"Listino: singola € {cat_row['price_single']:.2f} · "
-                f"pacchetto € {cat_row['price_package']:.2f} "
-                f"per {int(cat_row['package_credits'])} lezioni"
-            )
 
-            if tipo == "pacchetto":
-                pre_credits = int(cat_row["package_credits"]) or 1
-                pre_amount = float(cat_row["price_package"])
-            elif tipo == "singola":
-                pre_credits = abs(pre_saldo) if pre_saldo < 0 else 1
-                pre_amount = float(cat_row["price_single"]) * pre_credits
+            if pag_cat is None:
+                st.info("Scegli la categoria acquistata.")
             else:
-                pre_credits, pre_amount = 1, 0.0
+                cat_row = categories[categories["category_id"] == pag_cat].iloc[0]
+                st.caption(
+                    f"Listino: singola € {cat_row['price_single']:.2f} · "
+                    f"pacchetto € {cat_row['price_package']:.2f} "
+                    f"per {int(cat_row['package_credits'])} lezioni"
+                )
 
-            if PAYPAL and pre_amount:
-                st.markdown(f"**Link da inviare:** `{PAYPAL}/{pre_amount:.2f}EUR`")
-
-            with st.form("nuovo_pagamento"):
-                c1, c2 = st.columns(2)
-                p_email = c1.text_input(
-                    "Email", value=pre_email, key=f"pag_email_{suffix}"
-                )
-                p_name = c2.text_input(
-                    "Nome", value=pre_name, key=f"pag_name_{suffix}"
-                )
-                c3, c4, c5 = st.columns(3)
-                p_credits = c3.number_input(
-                    "Lezioni acquistate", min_value=1, value=pre_credits,
-                    step=1, key=f"pag_credits_{suffix}_{tipo}",
-                )
-                p_amount = c4.number_input(
-                    "Importo €", min_value=0.0, value=pre_amount,
-                    step=5.0, key=f"pag_amount_{suffix}_{tipo}",
-                )
-                p_method = c5.selectbox(
-                    "Metodo",
-                    ["PayPal", "Bonifico", "Contanti", "Satispay", "Altro"],
-                    key="pag_method",
-                )
-                p_date = st.date_input(
-                    "Data pagamento", value=date.today(), key="pag_date"
-                )
-                p_note = st.text_input("Nota (facoltativa)", key="pag_note")
-                avvisa_pag = st.checkbox(
-                    "Invia mail di conferma", value=True, key="pag_avvisa"
-                )
-                ok = st.form_submit_button("Rivedi e conferma", type="primary")
-
-            if ok:
-                if "@" not in p_email:
-                    st.error("Email non valida.")
+                if tipo == "pacchetto":
+                    pre_credits = int(cat_row["package_credits"]) or 1
+                    pre_amount = float(cat_row["price_package"])
+                elif tipo == "singola":
+                    pre_credits = abs(pre_saldo) if pre_saldo < 0 else 1
+                    pre_amount = float(cat_row["price_single"]) * pre_credits
                 else:
-                    email_n = data.norm_email(p_email)
-                    match = (
-                        balances[
-                            (balances["email"] == email_n)
-                            & (balances["category_id"] == pag_cat)
-                        ]
-                        if not balances.empty else balances
+                    pre_credits, pre_amount = 1, 0.0
+
+                if PAYPAL and pre_amount:
+                    st.markdown(
+                        f"**Link da inviare:** `{PAYPAL}/{pre_amount:.2f}EUR`"
                     )
-                    st.session_state.pag_pending = {
-                        "email": email_n,
-                        "name": p_name.strip(),
-                        "category_id": pag_cat,
-                        "categoria": cat_row["name"],
-                        "credits": int(p_credits),
-                        "amount": float(p_amount),
-                        "method": p_method,
-                        "date": p_date.isoformat(),
-                        "date_txt": p_date.strftime("%d/%m/%Y"),
-                        "note": p_note.strip(),
-                        "avvisa": bool(avvisa_pag),
-                        "saldo_prima": (
-                            int(match["saldo"].iloc[0]) if not match.empty else 0
-                        ),
-                    }
-                    _conferma_pagamento()
+
+                with st.form("nuovo_pagamento"):
+                    c1, c2 = st.columns(2)
+                    p_email = c1.text_input(
+                        "Email", value=pre_email, key=f"pag_email_{suffix}"
+                    )
+                    p_name = c2.text_input(
+                        "Nome", value=pre_name, key=f"pag_name_{suffix}"
+                    )
+                    c3, c4, c5 = st.columns(3)
+                    p_credits = c3.number_input(
+                        "Lezioni acquistate", min_value=1, value=pre_credits,
+                        step=1, key=f"pag_credits_{suffix}_{pag_cat}_{tipo}",
+                    )
+                    p_amount = c4.number_input(
+                        "Importo €", min_value=0.0, value=pre_amount,
+                        step=5.0, key=f"pag_amount_{suffix}_{pag_cat}_{tipo}",
+                    )
+                    p_method = c5.selectbox(
+                        "Metodo",
+                        ["PayPal", "Bonifico", "Contanti", "Satispay", "Altro"],
+                        key="pag_method",
+                    )
+                    p_date = st.date_input(
+                        "Data pagamento", value=date.today(), key="pag_date"
+                    )
+                    p_note = st.text_input("Nota (facoltativa)", key="pag_note")
+                    avvisa_pag = st.checkbox(
+                        "Invia mail di conferma", value=True, key="pag_avvisa"
+                    )
+                    ok = st.form_submit_button("Rivedi e conferma", type="primary")
+
+                if ok:
+                    if "@" not in p_email:
+                        st.error("Email non valida.")
+                    else:
+                        email_n = data.norm_email(p_email)
+                        match = (
+                            balances[
+                                (balances["email"] == email_n)
+                                & (balances["category_id"] == pag_cat)
+                            ]
+                            if not balances.empty else balances
+                        )
+                        st.session_state.pag_pending = {
+                            "email": email_n,
+                            "name": p_name.strip(),
+                            "category_id": pag_cat,
+                            "categoria": cat_row["name"],
+                            "credits": int(p_credits),
+                            "amount": float(p_amount),
+                            "method": p_method,
+                            "date": p_date.isoformat(),
+                            "date_txt": p_date.strftime("%d/%m/%Y"),
+                            "note": p_note.strip(),
+                            "avvisa": bool(avvisa_pag),
+                            "saldo_prima": (
+                                int(match["saldo"].iloc[0]) if not match.empty else 0
+                            ),
+                        }
+                        _conferma_pagamento()
 
     st.divider()
     st.subheader("Storico pagamenti")
@@ -1416,116 +1530,129 @@ with tab_rec:
 
                 if solo_positivi:
                     # ---------- invio a chi ha saldo positivo ----------
-                    cat_pos = st.selectbox(
+                    cat_pos = st.pills(
                         "Categoria",
                         options=lista_cat,
                         format_func=lambda c: nomi_cat.get(c, c),
-                        key="rec_pos_cat",
-                    )
-                    lid_pos = st.selectbox(
-                        "Registrazione da inviare",
-                        options=list(reg["lesson_id"]),
-                        format_func=_label_reg,
-                        key="rec_pos_lez",
+                        selection_mode="single",
+                        default=None,
+                        key="rec_pos_cat_pills",
                     )
 
-                    # esclude chi era prenotato o ha già ricevuto la registrazione
-                    esclusi = set()
-                    if not bookings.empty:
-                        esclusi |= set(
-                            bookings.loc[
-                                (bookings["lesson_id"] == lid_pos)
-                                & (bookings["status"] != "cancelled"),
-                                "email",
-                            ]
-                        )
-                    gia_inviati = data.load_recording_shares()
-                    if not gia_inviati.empty:
-                        esclusi |= set(
-                            gia_inviati.loc[
-                                gia_inviati["lesson_id"] == lid_pos, "email"
-                            ]
-                        )
-
-                    positivi = saldi_rec[
-                        (saldi_rec["category_id"] == cat_pos)
-                        & (saldi_rec["saldo"] > 0)
-                    ]
-                    n_esclusi = int(positivi["email"].isin(esclusi).sum())
-                    positivi = (
-                        positivi[~positivi["email"].isin(esclusi)]
-                        .sort_values("name")
-                        .reset_index(drop=True)
-                    )
-
-                    if n_esclusi:
-                        st.caption(
-                            f"{n_esclusi} persone escluse perché hanno partecipato "
-                            f"alla lezione o hanno già ricevuto la registrazione."
-                        )
-
-                    if positivi.empty:
-                        st.info("Nessuna persona a cui inviarla in questa categoria.")
+                    if cat_pos is None:
+                        st.info("Scegli una categoria per vedere chi ha saldo positivo.")
                     else:
-                        tabella = positivi.assign(invia=True)[
-                            ["invia", "name", "email", "saldo"]
-                        ].rename(columns={"name": "persona"})
-
-                        modificata = st.data_editor(
-                            tabella,
-                            column_config={
-                                "invia": st.column_config.CheckboxColumn(
-                                    "invia", default=True
-                                ),
-                            },
-                            disabled=["persona", "email", "saldo"],
-                            hide_index=True,
-                            use_container_width=True,
-                            key=f"rec_pos_tab_{cat_pos}_{lid_pos}",
+                        lid_pos = st.selectbox(
+                            "Registrazione da inviare",
+                            options=list(reg["lesson_id"]),
+                            format_func=_label_reg,
+                            key="rec_pos_lez",
                         )
-                        scelti = modificata[modificata["invia"]]
 
-                        non_scalare = st.checkbox(
-                            "Non scalare la lezione", value=False,
-                            key="rec_pos_no_scala",
-                        )
-                        nome_cat_pos = nomi_cat.get(cat_pos, cat_pos)
-                        st.caption(
-                            f"{len(scelti)} persone selezionate · "
-                            + (
-                                "nessuna lezione verrà scalata"
-                                if non_scalare
-                                else f"verrà scalata 1 lezione di {nome_cat_pos}"
+                        # esclude chi era prenotato o ha già ricevuto la registrazione
+                        esclusi = set()
+                        if not bookings.empty:
+                            esclusi |= set(
+                                bookings.loc[
+                                    (bookings["lesson_id"] == lid_pos)
+                                    & (bookings["status"] != "cancelled"),
+                                    "email",
+                                ]
                             )
+                        gia_inviati = data.load_recording_shares()
+                        if not gia_inviati.empty:
+                            esclusi |= set(
+                                gia_inviati.loc[
+                                    gia_inviati["lesson_id"] == lid_pos, "email"
+                                ]
+                            )
+
+                        positivi = saldi_rec[
+                            (saldi_rec["category_id"] == cat_pos)
+                            & (saldi_rec["saldo"] > 0)
+                        ]
+                        n_esclusi = int(positivi["email"].isin(esclusi).sum())
+                        positivi = (
+                            positivi[~positivi["email"].isin(esclusi)]
+                            .sort_values("name")
+                            .reset_index(drop=True)
                         )
 
-                        if st.button("Invia mail", type="primary", key="rec_pos_btn"):
-                            if scelti.empty:
-                                st.warning("Nessuna persona selezionata.")
-                            else:
-                                r_pos = reg[reg["lesson_id"] == lid_pos].iloc[0]
-                                inviati = _invia_registrazione(
-                                    list(zip(scelti["email"], scelti["persona"])),
-                                    r_pos["categoria"], r_pos["giorno"],
-                                    r_pos["url"], altri=True,
+                        if n_esclusi:
+                            st.caption(
+                                f"{n_esclusi} persone escluse perché hanno "
+                                f"partecipato alla lezione o hanno già ricevuto "
+                                f"la registrazione."
+                            )
+
+                        if positivi.empty:
+                            st.info(
+                                "Nessuna persona a cui inviarla in questa categoria."
+                            )
+                        else:
+                            tabella = positivi.assign(invia=True)[
+                                ["invia", "name", "email", "saldo"]
+                            ].rename(columns={"name": "persona"})
+
+                            modificata = st.data_editor(
+                                tabella,
+                                column_config={
+                                    "invia": st.column_config.CheckboxColumn(
+                                        "invia", default=True
+                                    ),
+                                },
+                                disabled=["persona", "email", "saldo"],
+                                hide_index=True,
+                                use_container_width=True,
+                                key=f"rec_pos_tab_{cat_pos}_{lid_pos}",
+                            )
+                            scelti = modificata[modificata["invia"]]
+
+                            non_scalare = st.checkbox(
+                                "Non scalare la lezione", value=False,
+                                key="rec_pos_no_scala",
+                            )
+                            nome_cat_pos = nomi_cat.get(cat_pos, cat_pos)
+                            st.caption(
+                                f"{len(scelti)} persone selezionate · "
+                                + (
+                                    "nessuna lezione verrà scalata"
+                                    if non_scalare
+                                    else f"verrà scalata 1 lezione di {nome_cat_pos}"
                                 )
-                                if inviati:
-                                    try:
-                                        data.add_recording_shares(
-                                            lid_pos, inviati,
-                                            "" if non_scalare else cat_pos,
-                                        )
-                                        st.caption(
-                                            "Invio registrato, nessuna lezione scalata."
-                                            if non_scalare
-                                            else f"Scalata 1 lezione di "
-                                            f"{nome_cat_pos} a {len(inviati)} persone."
-                                        )
-                                    except Exception as exc:
-                                        st.warning(
-                                            f"Mail inviate, ma l'invio non è stato "
-                                            f"registrato sul foglio: {exc}"
-                                        )
+                            )
+
+                            if st.button(
+                                "Invia mail", type="primary", key="rec_pos_btn"
+                            ):
+                                if scelti.empty:
+                                    st.warning("Nessuna persona selezionata.")
+                                else:
+                                    r_pos = reg[reg["lesson_id"] == lid_pos].iloc[0]
+                                    inviati = _invia_registrazione(
+                                        list(zip(scelti["email"], scelti["persona"])),
+                                        r_pos["categoria"], r_pos["giorno"],
+                                        r_pos["url"], altri=True,
+                                    )
+                                    if inviati:
+                                        try:
+                                            data.add_recording_shares(
+                                                lid_pos, inviati,
+                                                "" if non_scalare else cat_pos,
+                                            )
+                                            st.caption(
+                                                "Invio registrato, nessuna lezione "
+                                                "scalata."
+                                                if non_scalare
+                                                else f"Scalata 1 lezione di "
+                                                f"{nome_cat_pos} a {len(inviati)} "
+                                                f"persone."
+                                            )
+                                        except Exception as exc:
+                                            st.warning(
+                                                f"Mail inviate, ma l'invio non è "
+                                                f"stato registrato sul foglio: {exc}"
+                                            )
 
                 else:
                     # ---------- invio manuale ----------
@@ -1537,18 +1664,20 @@ with tab_rec:
                     )
                     r_sel = reg[reg["lesson_id"] == lid_altri].iloc[0]
 
-                    cat_lez = str(r_sel["category_id"])
-                    cat_addebito = st.selectbox(
+                    cat_addebito = st.pills(
                         "Scala 1 lezione dal saldo di",
                         options=lista_cat,
-                        index=lista_cat.index(cat_lez) if cat_lez in lista_cat else 0,
                         format_func=lambda c: nomi_cat.get(c, c),
-                        key=f"rec_altri_cat_{lid_altri}",
+                        selection_mode="single",
+                        default=None,
+                        key=f"rec_altri_cat_pills_{lid_altri}",
                     )
 
                     def _label_dest(e: str) -> str:
                         nome = nome_utente.get(e, "")
                         chi = f"{nome} ({e})" if nome else e
+                        if cat_addebito is None:
+                            return chi
                         return f"{chi} · saldo {saldo_di.get((e, cat_addebito), 0)}"
 
                     dest = st.multiselect(
@@ -1562,19 +1691,26 @@ with tab_rec:
                     non_scalare_altri = st.checkbox(
                         "Non scalare la lezione", value=False, key="rec_altri_no_scala"
                     )
-                    nome_cat_addebito = nomi_cat.get(cat_addebito, cat_addebito)
-                    st.caption(
-                        f"{len(dest)} persone selezionate · "
-                        + (
-                            "nessuna lezione verrà scalata"
-                            if non_scalare_altri
-                            else f"verrà scalata 1 lezione di {nome_cat_addebito}"
-                        )
+                    nome_cat_addebito = (
+                        nomi_cat.get(cat_addebito, cat_addebito)
+                        if cat_addebito is not None else ""
                     )
+                    if non_scalare_altri:
+                        nota_scalo = "nessuna lezione verrà scalata"
+                    elif cat_addebito is None:
+                        nota_scalo = "scegli la categoria da cui scalare"
+                    else:
+                        nota_scalo = f"verrà scalata 1 lezione di {nome_cat_addebito}"
+                    st.caption(f"{len(dest)} persone selezionate · {nota_scalo}")
 
                     if st.button("Invia mail", type="primary", key="rec_altri_btn"):
                         if not dest:
                             st.warning("Nessuna persona selezionata.")
+                        elif cat_addebito is None and not non_scalare_altri:
+                            st.error(
+                                "Scegli la categoria da cui scalare la lezione, "
+                                "oppure spunta «Non scalare la lezione»."
+                            )
                         else:
                             inviati = _invia_registrazione(
                                 [(e, nome_utente.get(e, "")) for e in dest],
@@ -1709,13 +1845,14 @@ with tab_pack:
                 f"€ {r['price_package']:.2f}"
             )
 
-        scelte = st.multiselect(
+        # qui la selezione iniziale è quella già salvata: mostra cosa è in vendita ora
+        scelte = st.pills(
             "Categorie",
             options=lista_pack,
-            default=[c for c in in_vendita if c in lista_pack],
             format_func=_label_pack,
-            placeholder="Scegli le categorie in vendita",
-            key="pack_cats",
+            selection_mode="multi",
+            default=[c for c in in_vendita if c in lista_pack],
+            key="pack_cats_pills",
         )
 
         senza_prezzo = [
@@ -1733,7 +1870,7 @@ with tab_pack:
         if st.button("Salva", type="primary", key="pack_save"):
             salvato = False
             try:
-                data.set_recording_packages(scelte)
+                data.set_recording_packages(list(scelte))
                 salvato = True
             except Exception as exc:
                 st.error(f"Non sono riuscito a salvare: {exc}")

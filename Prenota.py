@@ -43,14 +43,6 @@ if upcoming.empty:
     st.info("Nessuna lezione in programma.")
     st.stop()
 
-# le lezioni private (1 posto, senza insegnante) non sono prenotabili dal pubblico
-upcoming = upcoming[
-    ~((upcoming["capacity"] == 1) & (upcoming["teacher"].astype(str).str.strip() == ""))
-]
-if upcoming.empty:
-    st.info("Nessuna lezione in programma.")
-    st.stop()
-
 taken = data.seats_taken(bookings)
 upcoming = upcoming.assign(
     booked=lambda d: d["lesson_id"].map(taken).fillna(0).astype(int)
