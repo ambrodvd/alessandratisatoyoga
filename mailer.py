@@ -226,3 +226,19 @@ Grazie per aver scelti di praticare con me,
 {studio}
 """
     _send(to, f"Pacchetto lezioni registrate — {categoria}", body)
+
+
+def send_periodic_receipt(
+    to: str, name: str, categoria: str, periodo: str,
+    amount_eur: float, method: str = "",
+) -> None:
+    studio = _cfg()["studio_name"]
+    metodo = f" via {method}" if method else ""
+    body = f"""Ciao {name},
+
+ho registrato il tuo pagamento di € {amount_eur:.2f}{metodo} per il pacchetto periodico di {categoria}, valido per {periodo}.
+
+Grazie,
+{studio}
+"""
+    _send(to, f"Pacchetto periodico registrato — {categoria}", body)

@@ -1,7 +1,7 @@
 """Data access layer. Google Sheets."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 import gspread
 import pandas as pd
@@ -20,17 +20,103 @@ BOOKING_COLUMNS = [
 
 PAYMENT_COLUMNS = [
     "payment_id", "email", "name", "category_id", "credits",
-    "amount_eur", "date", "method", "note",
+    "amount_eur", "date", "method", "note", "period_from", "period_months",
 ]
 
 CATEGORY_COLUMNS = [
     "category_id", "name", "mode", "location",
     "price_single", "price_package", "package_credits",
+    "price_periodic", "period_months",
+]
+
+MESI_IT = [
+    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
 ]
 
 
 def norm_email(value: str) -> str:
     return str(value or "").strip().lower()
+
+
+def _to_int(value) -> int:
+    """Numero intero da una cella del foglio; 0 se vuota o non valida."""
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return 0
+
+
+# =============================================================
+# MESI (pacchetti periodici)
+# =============================================================
+
+def norm_mese(value) -> str:
+    """Riporta un mese al formato 'YYYY-MM', qualunque cosa restituisca il foglio."""
+    s = str(value or "").strip().lstrip("'")
+    if not s or s.lower() == "nan":
+        return ""
+    for fmt in ("%Y-%m", "%Y-%m-%d", "%d/%m/%Y", "%m/%Y"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m")
+        except ValueError:
+            pass
+    d = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    return d.strftime("%Y-%m") if pd.notna(d) else ""
+
+
+def mese_di(value) -> str:
+    """'YYYY-MM' della data di una lezione (date, datetime o testo)."""
+    if isinstance(value, (date, datetime)):
+        return f"{value.year:04d}-{value.month:02d}"
+    d = pd.to_datetime(value, errors="coerce")
+    return d.strftime("%Y-%m") if pd.notna(d) else ""
+
+
+def mesi_coperti(period_from: str, n_mesi: int) -> list:
+    """Elenco dei mesi 'YYYY-MM' coperti a partire da period_from per n_mesi."""
+    if not period_from or n_mesi <= 0:
+        return []
+    anno, mese = (int(x) for x in period_from.split("-"))
+    out = []
+    for i in range(n_mesi):
+        m0 = mese - 1 + i
+        out.append(f"{anno + m0 // 12:04d}-{m0 % 12 + 1:02d}")
+    return out
+
+
+def nome_mese(ym: str) -> str:
+    """'2026-10' → 'ottobre 2026'."""
+    if not ym:
+        return ""
+    anno, mese = ym.split("-")
+    return f"{MESI_IT[int(mese) - 1]} {anno}"
+
+
+def testo_copertura(period_from: str, n_mesi: int) -> str:
+    """'ottobre 2026' oppure 'ottobre 2026 – dicembre 2026'."""
+    mesi = mesi_coperti(period_from, n_mesi)
+    if not mesi:
+        return ""
+    if len(mesi) == 1:
+        return nome_mese(mesi[0])
+    return f"{nome_mese(mesi[0])} – {nome_mese(mesi[-1])}"
+
+
+def coperture(payments: pd.DataFrame) -> dict:
+    """{(email, category_id): set di mesi 'YYYY-MM' coperti da un periodico}."""
+    out = {}
+    if payments.empty or "period_from" not in payments.columns:
+        return out
+    periodici = payments[
+        (payments["period_from"] != "") & (payments["period_months"] > 0)
+    ]
+    for r in periodici.itertuples(index=False):
+        chiave = (r.email, r.category_id)
+        out.setdefault(chiave, set()).update(
+            mesi_coperti(r.period_from, int(r.period_months))
+        )
+    return out
 
 
 @st.cache_resource(show_spinner=False)
@@ -60,11 +146,13 @@ def load_categories() -> pd.DataFrame:
         .replace("", "presenza").fillna("presenza")
     )
     df["location"] = df["location"].astype(str).fillna("")
-    for col in ("price_single", "price_package"):
+    for col in ("price_periodic", "period_months"):
+        if col not in df.columns:
+            df[col] = 0
+    for col in ("price_single", "price_package", "price_periodic"):
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
-    df["package_credits"] = (
-        pd.to_numeric(df["package_credits"], errors="coerce").fillna(0).astype(int)
-    )
+    for col in ("package_credits", "period_months"):
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
     return df
 
 
@@ -81,12 +169,14 @@ def next_category_id() -> str:
 def add_category(
     name: str, mode: str, location: str,
     price_single: float, price_package: float, package_credits: int,
+    price_periodic: float = 0.0, period_months: int = 0,
 ) -> str:
     category_id = next_category_id()
     _sheet("categories").append_row(
         [
             category_id, name.strip(), mode.strip().lower(), location.strip(),
             float(price_single), float(price_package), int(package_credits),
+            float(price_periodic), int(period_months),
         ],
         value_input_option="USER_ENTERED",
     )
@@ -97,16 +187,18 @@ def add_category(
 def update_category(
     category_id: str, name: str, mode: str, location: str,
     price_single: float, price_package: float, package_credits: int,
+    price_periodic: float = 0.0, period_months: int = 0,
 ) -> bool:
     ws = _sheet("categories")
     cell = ws.find(str(category_id))
     if cell is None or cell.col != 1:
         return False
     ws.update(
-        f"A{cell.row}:G{cell.row}",
+        f"A{cell.row}:I{cell.row}",
         [[
             str(category_id), name.strip(), mode.strip().lower(), location.strip(),
             float(price_single), float(price_package), int(package_credits),
+            float(price_periodic), int(period_months),
         ]],
         value_input_option="USER_ENTERED",
     )
@@ -269,23 +361,32 @@ def load_payments() -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=PAYMENT_COLUMNS)
     df["email"] = df["email"].map(norm_email)
-    if "category_id" not in df.columns:
-        df["category_id"] = ""
+    for col in ("category_id", "period_from", "period_months"):
+        if col not in df.columns:
+            df[col] = ""
     df["category_id"] = df["category_id"].astype(str).str.strip()
     df["credits"] = pd.to_numeric(df["credits"], errors="coerce").fillna(0).astype(int)
     df["amount_eur"] = pd.to_numeric(df["amount_eur"], errors="coerce").fillna(0.0)
+    df["period_from"] = df["period_from"].map(norm_mese)
+    df["period_months"] = df["period_months"].map(_to_int)
     return df
 
 
 def add_payment(
     email: str, name: str, category_id: str, credits: int,
     amount_eur: float, date_str: str, method: str, note: str = "",
+    period_from: str = "", period_months: int = 0,
 ) -> str:
+    """Registra un pagamento. Per un periodico: credits=0, period_from='YYYY-MM'
+    e period_months = durata in mesi."""
     payment_id = "P" + uuid.uuid4().hex[:6].upper()
     _sheet("payments").append_row(
         [
             payment_id, norm_email(email), name.strip(), str(category_id).strip(),
             int(credits), float(amount_eur), date_str, method.strip(), note.strip(),
+            # l'apostrofo impedisce a Google Sheets di trasformare il mese in data
+            f"'{period_from}" if period_from else "",
+            int(period_months) if period_from else "",
         ],
         value_input_option="USER_ENTERED",
     )
@@ -301,6 +402,13 @@ def _cat_by_lesson(lessons: pd.DataFrame) -> dict:
         for lid, cid in zip(lessons["lesson_id"], lessons["category_id"])
     }
 
+
+def _mese_by_lesson(lessons: pd.DataFrame) -> dict:
+    if lessons.empty:
+        return {}
+    return {str(lid): mese_di(d) for lid, d in zip(lessons["lesson_id"], lessons["date"])}
+
+
 def add_manual_booking(lesson_id: str, name: str, email: str) -> str:
     """Registra una presenza inserita dall'admin (imbucato, iscrizione a voce)."""
     booking_id = uuid.uuid4().hex[:8].upper()
@@ -314,29 +422,61 @@ def add_manual_booking(lesson_id: str, name: str, email: str) -> str:
     load_bookings.clear()
     return booking_id
 
+
+def covered_live(email: str, category_id: str, mese: str) -> bool:
+    """True se la persona ha un periodico che copre quel mese ('YYYY-MM') per la categoria."""
+    target = norm_email(email)
+    cat = str(category_id).strip()
+    for r in _sheet("payments").get_all_records():
+        if (
+            norm_email(r.get("email")) == target
+            and str(r.get("category_id", "")).strip() == cat
+            and mese in mesi_coperti(
+                norm_mese(r.get("period_from")), _to_int(r.get("period_months"))
+            )
+        ):
+            return True
+    return False
+
+
 def balance_live(email: str, category_id: str) -> int:
-    """Saldo di categoria letto direttamente dal foglio, senza cache."""
+    """Saldo di categoria letto direttamente dal foglio, senza cache.
+    Le lezioni che cadono in un mese coperto da un periodico non scalano il saldo."""
     target = norm_email(email)
     cat = str(category_id).strip()
 
-    bought = sum(
-        int(pd.to_numeric(r.get("credits"), errors="coerce") or 0)
-        for r in _sheet("payments").get_all_records()
-        if norm_email(r.get("email")) == target
-        and str(r.get("category_id", "")).strip() == cat
-    )
+    bought = 0
+    coperti = set()
+    for r in _sheet("payments").get_all_records():
+        if (
+            norm_email(r.get("email")) != target
+            or str(r.get("category_id", "")).strip() != cat
+        ):
+            continue
+        bought += _to_int(r.get("credits"))
+        coperti.update(
+            mesi_coperti(
+                norm_mese(r.get("period_from")), _to_int(r.get("period_months"))
+            )
+        )
 
-    mappa = {
-        str(r.get("lesson_id")): str(r.get("category_id", "")).strip()
+    lezioni = {
+        str(r.get("lesson_id")): (
+            str(r.get("category_id", "")).strip(),
+            mese_di(r.get("date")),
+        )
         for r in _sheet("lessons").get_all_records()
     }
-    used = sum(
-        1
-        for r in _sheet("bookings").get_all_records()
-        if norm_email(r.get("email")) == target
-        and (r.get("status") or "confirmed") != "cancelled"
-        and mappa.get(str(r.get("lesson_id")), "") == cat
-    )
+    used = 0
+    for r in _sheet("bookings").get_all_records():
+        if (
+            norm_email(r.get("email")) != target
+            or (r.get("status") or "confirmed") == "cancelled"
+        ):
+            continue
+        cat_lez, mese_lez = lezioni.get(str(r.get("lesson_id")), ("", ""))
+        if cat_lez == cat and mese_lez not in coperti:
+            used += 1
 
     extra = sum(
         1
@@ -347,16 +487,18 @@ def balance_live(email: str, category_id: str) -> int:
 
     return bought - used - extra
 
+
 def balances_all(
     payments: pd.DataFrame, bookings: pd.DataFrame,
     lessons: pd.DataFrame, categories: pd.DataFrame,
     shares: pd.DataFrame | None = None,
     requests: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Riepilogo per coppia (email, categoria): registrazioni extra e
-    richieste di pacchetto incluse."""
+    """Riepilogo per coppia (email, categoria): registrazioni extra, richieste di
+    pacchetto e periodici inclusi. Le prenotazioni in un mese coperto da un
+    periodico non contano come usate."""
     colonne = ["email", "name", "categoria", "category_id",
-               "acquistati", "usati", "extra", "saldo"]
+               "acquistati", "usati", "extra", "saldo", "coperto_fino"]
 
     if shares is None:
         shares = load_recording_shares()
@@ -369,6 +511,8 @@ def balances_all(
         requests = requests[requests["category_id"] != ""]
 
     mappa = _cat_by_lesson(lessons)
+    mese_lez = _mese_by_lesson(lessons)
+    cop = coperture(payments)
     nome_cat = (
         dict(zip(categories["category_id"], categories["name"]))
         if not categories.empty else {}
@@ -402,6 +546,8 @@ def balances_all(
 
     righe = []
     for mail, cat in sorted(coppie):
+        coperti = cop.get((mail, cat), set())
+
         bought = 0
         if not payments.empty:
             bought = int(
@@ -415,7 +561,9 @@ def balances_all(
             used = sum(
                 1
                 for _, b in attive.iterrows()
-                if b["email"] == mail and mappa.get(str(b["lesson_id"]), "") == cat
+                if b["email"] == mail
+                and mappa.get(str(b["lesson_id"]), "") == cat
+                and mese_lez.get(str(b["lesson_id"]), "") not in coperti
             )
         extra = 0
         if not shares.empty:
@@ -431,9 +579,11 @@ def balances_all(
             "usati": used,
             "extra": extra,
             "saldo": bought - used - extra,
+            "coperto_fino": nome_mese(max(coperti)) if coperti else "",
         })
 
     return pd.DataFrame(righe, columns=colonne).sort_values(["saldo", "email"])
+
 
 def used_live(email: str, category_id: str) -> int:
     """Quante lezioni di questa categoria la persona ha già prenotato."""
@@ -450,6 +600,7 @@ def used_live(email: str, category_id: str) -> int:
         and (r.get("status") or "confirmed") != "cancelled"
         and mappa.get(str(r.get("lesson_id")), "") == cat
     )
+
 
 def bookings_of(
     email: str, bookings: pd.DataFrame, lessons: pd.DataFrame
@@ -511,6 +662,7 @@ def mark_live_sent(lesson_id: str) -> bool:
     load_recordings.clear()
     return True
 
+
 SHARE_COLUMNS = ["timestamp", "lesson_id", "email", "name", "category_id"]
 
 
@@ -549,7 +701,6 @@ def add_recording_shares(lesson_id: str, destinatari: list, category_id: str) ->
 # =============================================================
 
 @st.cache_data(ttl=120, show_spinner=False)
-
 def load_recording_packages() -> list:
     """Categorie in vendita nella pagina dei pacchetti registrazioni."""
     return [

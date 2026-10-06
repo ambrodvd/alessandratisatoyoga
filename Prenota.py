@@ -212,8 +212,9 @@ if submitted:
                 cat_id = choice.category_id
                 usate_prima = data.used_live(email, cat_id)
                 balance_before = data.balance_live(email, cat_id)
+                coperto = data.covered_live(email, cat_id, data.mese_di(choice.date))
                 ref = data.add_booking(choice.lesson_id, nome_pulito, email)
-                balance_after = balance_before - 1
+                balance_after = balance_before if coperto else balance_before - 1
                 prima_volta = usate_prima == 0
 
                 st.success(
@@ -222,7 +223,14 @@ if submitted:
                     f"Codice: **{ref}**"
                 )
 
-                if balance_after < 0:
+                if coperto:
+                    st.info(
+                        f"Lezione inclusa nel tuo pacchetto periodico di {choice.title}."
+                    )
+                    nota = "Questa lezione è inclusa nel tuo pacchetto periodico.\n\n"
+                    pay_link = ""
+                    st.balloons()
+                elif balance_after < 0:
                     da_pagare = abs(balance_after)
                     base = st.secrets.get("paypal_me", "")
 

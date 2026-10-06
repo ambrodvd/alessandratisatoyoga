@@ -80,6 +80,12 @@ with tab_lezioni:
             key="cat_mode_new",
         )
 
+        st.markdown("**Prezzi disponibili**")
+        k1, k2, k3 = st.columns(3)
+        has_single = k1.checkbox("Lezione singola", value=True, key="cat_has_single")
+        has_pack = k2.checkbox("Pacchetto", value=True, key="cat_has_pack")
+        has_per = k3.checkbox("Periodico", value=False, key="cat_has_per")
+
         with st.form("nuova_categoria"):
             cat_name = st.text_input("Nome", placeholder="es. Morning Glory")
             if cat_mode == "online":
@@ -89,21 +95,36 @@ with tab_lezioni:
             else:
                 cat_location = st.text_input("Luogo", placeholder="Via Roma 12, Milano")
 
-            c1, c2, c3 = st.columns(3)
-            cat_single = c1.number_input(
-                "Prezzo singola €", min_value=0.0, value=15.0, step=1.0
-            )
-            cat_pack = c2.number_input(
-                "Prezzo pacchetto €", min_value=0.0, value=120.0, step=5.0
-            )
-            cat_credits = c3.number_input(
-                "Lezioni nel pacchetto", min_value=1, max_value=100, value=10
-            )
+            cat_single, cat_pack, cat_credits = 0.0, 0.0, 0
+            cat_per, cat_months = 0.0, 0
+
+            if has_single:
+                cat_single = st.number_input(
+                    "Prezzo singola €", min_value=0.0, value=15.0, step=1.0
+                )
+            if has_pack:
+                c2, c3 = st.columns(2)
+                cat_pack = c2.number_input(
+                    "Prezzo pacchetto €", min_value=0.0, value=120.0, step=5.0
+                )
+                cat_credits = c3.number_input(
+                    "Lezioni nel pacchetto", min_value=1, max_value=100, value=10
+                )
+            if has_per:
+                p1, p2 = st.columns(2)
+                cat_per = p1.number_input(
+                    "Prezzo periodico €", min_value=0.0, value=150.0, step=5.0
+                )
+                cat_months = p2.number_input(
+                    "Durata in mesi", min_value=1, max_value=12, value=1
+                )
             crea_cat = st.form_submit_button("Crea categoria", type="primary")
 
         if crea_cat:
             if not cat_name.strip():
                 st.error("Il nome è obbligatorio.")
+            elif not (has_single or has_pack or has_per):
+                st.error("Scegli almeno un tipo di prezzo.")
             elif cat_mode == "online" and not cat_location.strip().startswith("http"):
                 st.error("Per le categorie online serve un link valido.")
             else:
@@ -111,6 +132,7 @@ with tab_lezioni:
                     name=cat_name, mode=cat_mode, location=cat_location,
                     price_single=cat_single, price_package=cat_pack,
                     package_credits=int(cat_credits),
+                    price_periodic=cat_per, period_months=int(cat_months),
                 )
                 st.success(f"Categoria {cid} creata.")
                 st.rerun()
@@ -153,6 +175,25 @@ with tab_lezioni:
                     key=f"cat_mode_edit_{cid_sel}",
                 )
 
+                st.markdown("**Prezzi disponibili**")
+                h1, h2, h3 = st.columns(3)
+                e_has_single = h1.checkbox(
+                    "Lezione singola", value=float(row["price_single"]) > 0,
+                    key=f"cat_e_has_single_{cid_sel}",
+                )
+                e_has_pack = h2.checkbox(
+                    "Pacchetto",
+                    value=float(row["price_package"]) > 0
+                    and int(row["package_credits"]) > 0,
+                    key=f"cat_e_has_pack_{cid_sel}",
+                )
+                e_has_per = h3.checkbox(
+                    "Periodico",
+                    value=float(row["price_periodic"]) > 0
+                    and int(row["period_months"]) > 0,
+                    key=f"cat_e_has_per_{cid_sel}",
+                )
+
                 with st.form("modifica_categoria"):
                     e_name = st.text_input(
                         "Nome", value=row["name"], key=f"cat_e_name_{cid_sel}"
@@ -161,29 +202,50 @@ with tab_lezioni:
                         "Link Zoom" if e_mode == "online" else "Luogo",
                         value=row["location"], key=f"cat_e_location_{cid_sel}",
                     )
-                    d1, d2, d3 = st.columns(3)
-                    e_single = d1.number_input(
-                        "Prezzo singola €", min_value=0.0,
-                        value=float(row["price_single"]), step=1.0,
-                        key=f"cat_e_single_{cid_sel}",
-                    )
-                    e_pack = d2.number_input(
-                        "Prezzo pacchetto €", min_value=0.0,
-                        value=float(row["price_package"]), step=5.0,
-                        key=f"cat_e_pack_{cid_sel}",
-                    )
-                    e_credits = d3.number_input(
-                        "Lezioni nel pacchetto", min_value=1, max_value=100,
-                        value=int(row["package_credits"]) or 10,
-                        key=f"cat_e_credits_{cid_sel}",
-                    )
+
+                    e_single, e_pack, e_credits = 0.0, 0.0, 0
+                    e_per, e_months = 0.0, 0
+
+                    if e_has_single:
+                        e_single = st.number_input(
+                            "Prezzo singola €", min_value=0.0,
+                            value=float(row["price_single"]) or 15.0, step=1.0,
+                            key=f"cat_e_single_{cid_sel}",
+                        )
+                    if e_has_pack:
+                        d2, d3 = st.columns(2)
+                        e_pack = d2.number_input(
+                            "Prezzo pacchetto €", min_value=0.0,
+                            value=float(row["price_package"]) or 120.0, step=5.0,
+                            key=f"cat_e_pack_{cid_sel}",
+                        )
+                        e_credits = d3.number_input(
+                            "Lezioni nel pacchetto", min_value=1, max_value=100,
+                            value=int(row["package_credits"]) or 10,
+                            key=f"cat_e_credits_{cid_sel}",
+                        )
+                    if e_has_per:
+                        d4, d5 = st.columns(2)
+                        e_per = d4.number_input(
+                            "Prezzo periodico €", min_value=0.0,
+                            value=float(row["price_periodic"]) or 150.0, step=5.0,
+                            key=f"cat_e_per_{cid_sel}",
+                        )
+                        e_months = d5.number_input(
+                            "Durata in mesi", min_value=1, max_value=12,
+                            value=int(row["period_months"]) or 1,
+                            key=f"cat_e_months_{cid_sel}",
+                        )
                     salva = st.form_submit_button("Salva modifiche")
 
-                if salva:
+                if salva and not (e_has_single or e_has_pack or e_has_per):
+                    st.error("Scegli almeno un tipo di prezzo.")
+                elif salva:
                     if data.update_category(
                         category_id=cid_sel, name=e_name, mode=e_mode,
                         location=e_location, price_single=e_single,
                         price_package=e_pack, package_credits=int(e_credits),
+                        price_periodic=e_per, period_months=int(e_months),
                     ):
                         st.success("Categoria aggiornata.")
                         st.caption(
@@ -894,11 +956,12 @@ with tab_persone:
     else:
         st.dataframe(
             balances[["name", "categoria", "acquistati", "usati", "extra",
-                      "saldo", "email"]]
+                      "saldo", "coperto_fino", "email"]]
             .rename(columns={
                 "name": "persona",
                 "usati": "lezioni usate",
                 "extra": "registrazioni",
+                "coperto_fino": "coperto fino a",
             }),
             use_container_width=True, hide_index=True,
         )
@@ -912,6 +975,7 @@ with tab_persone:
     )
     PAG_PREFISSI = (
         "pag_email_", "pag_name_", "pag_credits_", "pag_amount_", "pag_cat_",
+        "pag_mese_",
     )
 
     def _reset_pagamento():
@@ -927,19 +991,32 @@ with tab_persone:
             st.info("Nessun pagamento da confermare.")
             return
 
+        periodico = bool(p.get("period_from"))
         parola = "lezione" if p["credits"] == 1 else "lezioni"
         saldo_dopo = p["saldo_prima"] + p["credits"]
+        riga_cosa = (
+            f"**Periodico:** "
+            f"{data.testo_copertura(p['period_from'], p['period_months'])}  \n"
+            if periodico
+            else f"**Lezioni:** {p['credits']} {parola}  \n"
+        )
         with st.container(border=True):
             st.markdown(
                 f"**{p['name'] or '—'}**  \n{p['email']}\n\n"
                 f"**Categoria:** {p['categoria']}  \n"
-                f"**Lezioni:** {p['credits']} {parola}  \n"
-                f"**Importo:** € {p['amount']:.2f}  \n"
+                + riga_cosa
+                + f"**Importo:** € {p['amount']:.2f}  \n"
                 f"**Metodo:** {p['method']}  \n"
                 f"**Data:** {p['date_txt']}"
                 + (f"  \n**Nota:** {p['note']}" if p["note"] else "")
             )
-            st.markdown(f"**Saldo:** {p['saldo_prima']} → **{saldo_dopo}**")
+            if periodico:
+                st.markdown(
+                    "Nei mesi coperti le lezioni di questa categoria "
+                    "non scalano il saldo."
+                )
+            else:
+                st.markdown(f"**Saldo:** {p['saldo_prima']} → **{saldo_dopo}**")
             st.caption(
                 "Verrà inviata la mail di conferma."
                 if p["avvisa"] else "Nessuna mail verrà inviata."
@@ -971,25 +1048,42 @@ with tab_persone:
                     email=p["email"], name=p["name"], category_id=p["category_id"],
                     credits=p["credits"], amount_eur=p["amount"],
                     date_str=p["date"], method=p["method"], note=p["note"],
+                    period_from=p.get("period_from", ""),
+                    period_months=p.get("period_months", 0),
                 )
             except Exception as exc:
                 esito.append(("error", f"Pagamento NON registrato: {exc}"))
 
             if pid:
+                periodo_txt = data.testo_copertura(
+                    p.get("period_from", ""), p.get("period_months", 0)
+                )
                 saldo = data.balance_live(p["email"], p["category_id"])
                 esito.append((
                     "success",
                     f"Pagamento {pid} registrato per {p['name'] or p['email']}. "
-                    f"Saldo {p['categoria']}: {saldo} lezioni.",
+                    + (
+                        f"{p['categoria']} coperto per {periodo_txt}."
+                        if periodo_txt
+                        else f"Saldo {p['categoria']}: {saldo} lezioni."
+                    ),
                 ))
 
                 if p["avvisa"]:
                     try:
-                        mailer.send_payment_receipt(
-                            to=p["email"], name=p["name"] or p["email"],
-                            categoria=p["categoria"], credits=p["credits"],
-                            amount_eur=p["amount"], saldo=saldo, method=p["method"],
-                        )
+                        if periodo_txt:
+                            mailer.send_periodic_receipt(
+                                to=p["email"], name=p["name"] or p["email"],
+                                categoria=p["categoria"], periodo=periodo_txt,
+                                amount_eur=p["amount"], method=p["method"],
+                            )
+                        else:
+                            mailer.send_payment_receipt(
+                                to=p["email"], name=p["name"] or p["email"],
+                                categoria=p["categoria"], credits=p["credits"],
+                                amount_eur=p["amount"], saldo=saldo,
+                                method=p["method"],
+                            )
                         esito.append(("caption", "Mail di conferma inviata."))
                     except Exception as exc:
                         esito.append((
@@ -1046,10 +1140,11 @@ with tab_persone:
     else:
         tipo = st.radio(
             "Tipo",
-            options=["pacchetto", "singola", "personalizzato", "prova"],
+            options=["pacchetto", "singola", "periodico", "personalizzato", "prova"],
             format_func=lambda t: {
                 "pacchetto": "Pacchetto",
                 "singola": "Lezione singola",
+                "periodico": "📅 Periodico",
                 "personalizzato": "Personalizzato",
                 "prova": "🎁 Lezione prova gratuita",
             }[t],
@@ -1143,25 +1238,55 @@ with tab_persone:
 
         # ---- pagamento normale ----
         else:
-            lista_cat_pag = list(categories["category_id"])
-            pag_cat = st.pills(
-                "Categoria acquistata",
-                options=lista_cat_pag,
-                format_func=_nome_cat,
-                selection_mode="single",
-                default=None,
-                key=f"pag_cat_{suffix}",
+            if tipo == "periodico":
+                # solo le categorie che prevedono il pagamento periodico
+                lista_cat_pag = list(
+                    categories.loc[
+                        (categories["price_periodic"] > 0)
+                        & (categories["period_months"] > 0),
+                        "category_id",
+                    ]
+                )
+            else:
+                lista_cat_pag = list(categories["category_id"])
+
+            pag_cat = (
+                st.pills(
+                    "Categoria acquistata",
+                    options=lista_cat_pag,
+                    format_func=_nome_cat,
+                    selection_mode="single",
+                    default=None,
+                    key=f"pag_cat_{suffix}_{tipo == 'periodico'}",
+                )
+                if lista_cat_pag else None
             )
 
-            if pag_cat is None:
+            if not lista_cat_pag:
+                st.warning(
+                    "Nessuna categoria con pagamento periodico. Attivalo in "
+                    "Modifica calendario → Categorie."
+                )
+            elif pag_cat is None:
                 st.info("Scegli la categoria acquistata.")
             else:
                 cat_row = categories[categories["category_id"] == pag_cat].iloc[0]
-                st.caption(
-                    f"Listino: singola € {cat_row['price_single']:.2f} · "
-                    f"pacchetto € {cat_row['price_package']:.2f} "
-                    f"per {int(cat_row['package_credits'])} lezioni"
-                )
+                n_mesi_cat = int(cat_row["period_months"])
+
+                listino = []
+                if float(cat_row["price_single"]) > 0:
+                    listino.append(f"singola € {cat_row['price_single']:.2f}")
+                if float(cat_row["price_package"]) > 0 and int(cat_row["package_credits"]) > 0:
+                    listino.append(
+                        f"pacchetto € {cat_row['price_package']:.2f} "
+                        f"per {int(cat_row['package_credits'])} lezioni"
+                    )
+                if float(cat_row["price_periodic"]) > 0 and n_mesi_cat > 0:
+                    listino.append(
+                        f"periodico € {cat_row['price_periodic']:.2f} "
+                        f"per {n_mesi_cat} {'mese' if n_mesi_cat == 1 else 'mesi'}"
+                    )
+                st.caption("Listino: " + (" · ".join(listino) or "nessun prezzo"))
 
                 if tipo == "pacchetto":
                     pre_credits = int(cat_row["package_credits"]) or 1
@@ -1169,8 +1294,19 @@ with tab_persone:
                 elif tipo == "singola":
                     pre_credits = abs(pre_saldo) if pre_saldo < 0 else 1
                     pre_amount = float(cat_row["price_single"]) * pre_credits
+                elif tipo == "periodico":
+                    pre_credits = 0
+                    pre_amount = float(cat_row["price_periodic"])
                 else:
                     pre_credits, pre_amount = 1, 0.0
+
+                # mesi tra cui scegliere l'inizio del periodico: da 2 mesi fa a 12 avanti
+                oggi_m = date.today()
+                base_m = oggi_m.year * 12 + oggi_m.month - 1
+                opz_mesi = [
+                    f"{(base_m + i) // 12:04d}-{(base_m + i) % 12 + 1:02d}"
+                    for i in range(-2, 13)
+                ]
 
                 if PAYPAL and pre_amount:
                     st.markdown(
@@ -1186,10 +1322,21 @@ with tab_persone:
                         "Nome", value=pre_name, key=f"pag_name_{suffix}"
                     )
                     c3, c4, c5 = st.columns(3)
-                    p_credits = c3.number_input(
-                        "Lezioni acquistate", min_value=1, value=pre_credits,
-                        step=1, key=f"pag_credits_{suffix}_{pag_cat}_{tipo}",
-                    )
+                    if tipo == "periodico":
+                        p_mese = c3.selectbox(
+                            "Mese di inizio",
+                            options=opz_mesi,
+                            index=2,  # mese corrente
+                            format_func=data.nome_mese,
+                            key=f"pag_mese_{suffix}_{pag_cat}",
+                        )
+                        p_credits = 0
+                    else:
+                        p_mese = ""
+                        p_credits = c3.number_input(
+                            "Lezioni acquistate", min_value=1, value=pre_credits,
+                            step=1, key=f"pag_credits_{suffix}_{pag_cat}_{tipo}",
+                        )
                     p_amount = c4.number_input(
                         "Importo €", min_value=0.0, value=pre_amount,
                         step=5.0, key=f"pag_amount_{suffix}_{pag_cat}_{tipo}",
@@ -1206,6 +1353,11 @@ with tab_persone:
                     avvisa_pag = st.checkbox(
                         "Invia mail di conferma", value=True, key="pag_avvisa"
                     )
+                    if tipo == "periodico":
+                        st.caption(
+                            f"Durata: {n_mesi_cat} "
+                            f"{'mese' if n_mesi_cat == 1 else 'mesi'} dal mese di inizio."
+                        )
                     ok = st.form_submit_button("Rivedi e conferma", type="primary")
 
                 if ok:
@@ -1232,6 +1384,10 @@ with tab_persone:
                             "date_txt": p_date.strftime("%d/%m/%Y"),
                             "note": p_note.strip(),
                             "avvisa": bool(avvisa_pag),
+                            "period_from": p_mese if tipo == "periodico" else "",
+                            "period_months": (
+                                n_mesi_cat if tipo == "periodico" else 0
+                            ),
                             "saldo_prima": (
                                 int(match["saldo"].iloc[0]) if not match.empty else 0
                             ),
