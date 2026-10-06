@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from datetime import date, time, timedelta
 
 import pandas as pd
@@ -44,6 +46,23 @@ MODALITA = {
     "online": "💻 Online",
     "privata": "🔒 Lezione privata",
 }
+
+
+SENZA_EMAIL = "Senza email (usa quella dello studio)"
+
+
+def _email_studio(nome: str) -> str:
+    """Email dello studio con il nome della persona dopo il '+'
+    (es. alessandratisatoyoga+maria.rossi@gmail.com): arriva comunque nella
+    casella dello studio, ma ogni persona resta distinta e ha il suo saldo."""
+    base = st.secrets["email"]["sender"]
+    utente, dominio = base.split("@", 1)
+    slug = (
+        unicodedata.normalize("NFKD", str(nome or ""))
+        .encode("ascii", "ignore").decode().lower()
+    )
+    slug = re.sub(r"[^a-z0-9]+", ".", slug).strip(".")
+    return f"{utente}+{slug}@{dominio}" if slug else base
 
 
 def _nome_cat(cid: str) -> str:
@@ -546,6 +565,9 @@ with tab_pren:
             fc_email = fc2.text_input(
                 "Email", value=fc_email_pre, key=f"fc_email_{sfx_fc}"
             )
+            if fc2.checkbox(SENZA_EMAIL, key=f"fc_no_email_{sfx_fc}"):
+                fc_email = _email_studio(fc_name)
+                fc2.caption(f"Userò {fc_email}")
             fc_note = st.text_input(
                 "Nota (facoltativa)",
                 placeholder="es. lezione privata, sostituzione",
@@ -732,6 +754,8 @@ with tab_pren:
                 pres_email = pc2.text_input(
                     "Email", value=pres_email_pre, key=f"pres_email_{sfx}"
                 )
+                if pc2.checkbox(SENZA_EMAIL, key=f"pres_no_email_{sfx}"):
+                    pres_email = _email_studio(pres_name)
                 ok_pres = st.form_submit_button("Aggiungi presenza", type="primary")
 
             if ok_pres:
@@ -1321,6 +1345,8 @@ with tab_persone:
                     p_name = c2.text_input(
                         "Nome", value=pre_name, key=f"pag_name_{suffix}"
                     )
+                    if c1.checkbox(SENZA_EMAIL, key=f"pag_no_email_{suffix}"):
+                        p_email = _email_studio(p_name)
                     c3, c4, c5 = st.columns(3)
                     if tipo == "periodico":
                         p_mese = c3.selectbox(
