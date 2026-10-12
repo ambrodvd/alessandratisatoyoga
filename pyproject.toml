@@ -7,7 +7,9 @@ requires-python = ">=3.14"
 dependencies = [
     "google-auth>=2.57.1",
     "gspread>=6.2.1",
+    "icalendar>=7.3.0",
     "pandas>=3.0.3",
+    "recurring-ical-events>=3.8.2",
     "streamlit>=1.61.1",
 ]
 

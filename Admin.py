@@ -72,7 +72,7 @@ def _nome_cat(cid: str) -> str:
 
 
 tab_lezioni, tab_pren, tab_persone, tab_rec, tab_pack = st.tabs(
-    ["Modifica calendario", "Prenotazioni e private", "Persone e pagamenti",
+    ["Calendario", "Prenotazioni e private", "Persone e pagamenti",
      "Gestione registrazioni", "Pacchetti registrazioni"]
 )
 
@@ -80,7 +80,9 @@ tab_lezioni, tab_pren, tab_persone, tab_rec, tab_pack = st.tabs(
 # LEZIONI
 # =============================================================
 with tab_lezioni:
-    sub_les, sub_cat = st.tabs(["Calendario", "Categorie"])
+    sub_add, sub_cal, sub_mod, sub_cat = st.tabs(
+        ["Aggiungi una lezione", "Calendario", "Modifica o elimina lezione", "Categorie"]
+    )
 
     # ---------- categorie ----------
     with sub_cat:
@@ -297,8 +299,8 @@ with tab_lezioni:
                 else:
                     st.error("Categoria non trovata.")
 
-    # ---------- calendario ----------
-    with sub_les:
+    # ---------- aggiungi una lezione ----------
+    with sub_add:
         st.subheader("Aggiungi lezioni")
 
         if categories.empty:
@@ -378,61 +380,196 @@ with tab_lezioni:
                         st.write("\n".join(f"- {e}" for e in errori))
                     data.load_lessons.clear()
 
-        st.divider()
+    # partecipanti per lezione: nome se è una sola persona, "Gruppo" se più
+    attive_cal = (
+        bookings[bookings["status"] != "cancelled"] if not bookings.empty else bookings
+    )
+    nomi_per_lez = (
+        attive_cal.groupby("lesson_id")["name"].apply(list).to_dict()
+        if not attive_cal.empty else {}
+    )
+
+    def _partecipanti(lid: str) -> str:
+        nomi = nomi_per_lez.get(str(lid), [])
+        if not nomi:
+            return "—"
+        return nomi[0] if len(nomi) == 1 else "Gruppo"
+
+    def _ora_da_testo(valore) -> time:
+        try:
+            hh, mm = str(valore).strip().split(":")[:2]
+            return time(int(hh), int(mm))
+        except (ValueError, TypeError):
+            return time(18, 30)
+
+    taken = data.seats_taken(bookings)
+
+    # ---------- calendario ----------
+    with sub_cal:
         st.subheader("Calendario")
 
         if lessons.empty:
             st.info("Nessuna lezione in calendario.")
         else:
+            cat_cal = st.pills(
+                "Categorie",
+                options=list(categories["category_id"]),
+                format_func=_nome_cat,
+                selection_mode="multi",
+                default=None,
+                key="cal_cat_pills",
+            )
+            st.caption("Seleziona una o più categorie per vedere il calendario.")
+
             solo_future = st.checkbox(
-                "Mostra solo le future", value=True, key="cal_solo_future"
+                "Mostra solo le future", value=False, key="cal_solo_future"
             )
             vista = lessons[lessons["date"] >= date.today()] if solo_future else lessons
+            vista = vista[vista["category_id"].astype(str).isin(cat_cal)]
             vista = vista.sort_values(["date", "time"])
 
-            if vista.empty:
-                st.info("Nessuna lezione futura.")
+            if not cat_cal:
+                pass
+            elif vista.empty:
+                st.info("Nessuna lezione con questi filtri.")
             else:
-                taken = data.seats_taken(bookings)
                 vista = vista.assign(
-                    prenotati=lambda d: d["lesson_id"].map(taken).fillna(0).astype(int)
+                    prenotati=lambda d: d["lesson_id"].map(taken).fillna(0).astype(int),
+                    partecipanti=lambda d: d["lesson_id"].map(_partecipanti),
                 )
                 vista = vista.assign(
                     liberi=lambda d: (d["capacity"] - d["prenotati"]).clip(lower=0)
                 )
                 st.dataframe(
-                    vista[["lesson_id", "date", "time", "title", "teacher", "mode",
-                           "location", "capacity", "prenotati", "liberi"]],
+                    vista[["lesson_id", "date", "time", "title", "partecipanti",
+                           "teacher", "mode", "location", "capacity",
+                           "prenotati", "liberi"]],
                     use_container_width=True, hide_index=True,
                 )
 
-                st.subheader("Elimina una lezione")
-                st.caption(
-                    "Le prenotazioni già registrate restano nel foglio ma perdono "
-                    "il collegamento: annullale prima."
+    # ---------- modifica o elimina lezione ----------
+    with sub_mod:
+        if lessons.empty:
+            st.info("Nessuna lezione in calendario.")
+        else:
+            tutte = lessons.sort_values(["date", "time"]).reset_index(drop=True)
+            tutte = tutte.assign(
+                prenotati=tutte["lesson_id"].map(taken).fillna(0).astype(int)
+            )
+
+            # di default propone la prima lezione da oggi in poi
+            future_pos = [i for i, d in enumerate(tutte["date"]) if d >= date.today()]
+            pos_default = future_pos[0] if future_pos else len(tutte) - 1
+
+            def _label_mod(lid: str) -> str:
+                r = tutte[tutte["lesson_id"] == lid].iloc[0]
+                return (
+                    f"{r['date'].strftime('%d/%m/%Y')} {r['time']} · {r['title']} · "
+                    f"{_partecipanti(lid)} ({lid})"
                 )
 
-                def _label_les(lid: str) -> str:
-                    r = vista[vista["lesson_id"] == lid].iloc[0]
-                    return (
-                        f"{lid} · {r['date'].strftime('%d/%m/%Y')} {r['time']} · "
-                        f"{r['title']} ({r['prenotati']} prenotati)"
+            lid_sel = st.selectbox(
+                "Lezione",
+                options=list(tutte["lesson_id"]),
+                index=pos_default,
+                format_func=_label_mod,
+                key="mod_les_sel",
+            )
+            r_mod = tutte[tutte["lesson_id"] == lid_sel].iloc[0]
+            n_pren = int(r_mod["prenotati"])
+
+            # ---- modifica ----
+            st.subheader("Modifica lezione")
+
+            lista_c = list(categories["category_id"])
+            cat_att = str(r_mod["category_id"])
+            m_cat = st.pills(
+                "Categoria",
+                options=lista_c,
+                format_func=_nome_cat,
+                selection_mode="single",
+                default=cat_att if cat_att in lista_c else None,
+                key=f"mod_cat_{lid_sel}",
+            )
+
+            with st.form(f"mod_les_{lid_sel}"):
+                m_title = st.text_input(
+                    "Titolo", value=r_mod["title"], key=f"mod_title_{lid_sel}",
+                    help="Se cambi categoria e lasci il titolo invariato, "
+                         "uso il nome della nuova categoria.",
+                )
+                m1, m2 = st.columns(2)
+                m_date = m1.date_input(
+                    "Data", value=r_mod["date"], key=f"mod_date_{lid_sel}"
+                )
+                m_time = m2.time_input(
+                    "Ora", value=_ora_da_testo(r_mod["time"]),
+                    step=timedelta(minutes=15), key=f"mod_time_{lid_sel}",
+                )
+                m3, m4 = st.columns(2)
+                m_teacher = m3.text_input(
+                    "Insegnante", value=r_mod["teacher"], key=f"mod_teacher_{lid_sel}"
+                )
+                m_capacity = m4.number_input(
+                    "Posti", min_value=1, max_value=100,
+                    value=max(1, int(r_mod["capacity"])),
+                    key=f"mod_capacity_{lid_sel}",
+                )
+                salva_les = st.form_submit_button("Salva modifiche", type="primary")
+
+            if salva_les:
+                if m_cat is None:
+                    st.error("Scegli una categoria.")
+                elif int(m_capacity) < n_pren:
+                    st.error(
+                        f"Ci sono {n_pren} prenotati: i posti non possono essere meno."
                     )
+                else:
+                    cambiata = m_cat != cat_att
+                    if cambiata:
+                        nuova = categories[categories["category_id"] == m_cat].iloc[0]
+                        mode_m, location_m = nuova["mode"], nuova["location"]
+                        if m_title.strip() == str(r_mod["title"]).strip():
+                            m_title = nuova["name"]
+                    else:
+                        mode_m, location_m = r_mod["mode"], r_mod["location"]
 
-                da_eliminare = st.selectbox(
-                    "Lezione", options=list(vista["lesson_id"]),
-                    format_func=_label_les, key="les_del_sel",
-                )
-                conferma = st.checkbox(
-                    "Seleziona la casella se sei sicura di voler cancellare",
-                    key="les_del_ok",
-                )
-                if st.button("Elimina lezione", key="les_del_btn") and conferma:
-                    if data.delete_lesson(da_eliminare):
-                        st.success(f"{da_eliminare} eliminata.")
+                    if data.update_lesson(
+                        lesson_id=lid_sel,
+                        date_str=m_date.isoformat(),
+                        time_str=m_time.strftime("%H:%M"),
+                        title=m_title,
+                        teacher=m_teacher,
+                        capacity=int(m_capacity),
+                        mode=mode_m,
+                        location=location_m,
+                        category_id=m_cat,
+                    ):
+                        st.success(f"Lezione {lid_sel} aggiornata.")
                         st.rerun()
                     else:
                         st.error("Lezione non trovata.")
+
+            # ---- elimina ----
+            st.divider()
+            st.subheader("Elimina lezione")
+            st.caption(
+                "Le prenotazioni già registrate restano nel foglio ma perdono "
+                "il collegamento: annullale prima."
+            )
+            if n_pren:
+                st.warning(f"Questa lezione ha {n_pren} prenotati.")
+
+            conferma = st.checkbox(
+                "Seleziona la casella se sei sicura di voler cancellare",
+                key=f"les_del_ok_{lid_sel}",
+            )
+            if st.button("Elimina lezione", key="les_del_btn") and conferma:
+                if data.delete_lesson(lid_sel):
+                    st.success(f"{lid_sel} eliminata.")
+                    st.rerun()
+                else:
+                    st.error("Lezione non trovata.")
 
 # =============================================================
 # PRENOTAZIONI E PRIVATE
@@ -508,17 +645,75 @@ with tab_pren:
             if con_data:
                 ripeti_fc = st.radio(
                     "Quando",
-                    options=["singola", "settimanale", "date"],
+                    options=["singola", "settimanale", "date", "calendario"],
                     format_func=lambda m: {
                         "singola": "Una data",
                         "settimanale": "Ogni settimana",
                         "date": "Più date",
+                        "calendario": "📅 Dal calendario",
                     }[m],
                     horizontal=True,
                     key="fc_ripeti",
                 )
 
-                if ripeti_fc == "date":
+                if ripeti_fc == "calendario":
+                    giorni_fc = []
+                    fc_time = time(18, 30)
+
+                    if not st.secrets.get("ical_url"):
+                        st.info(
+                            "Aggiungi il link del calendario nei secrets come `ical_url`."
+                        )
+                    else:
+                        if st.button("Ricarica calendario", key="fc_ical_reload"):
+                            data.load_ical_events.clear()
+
+                        try:
+                            eventi_fc = data.load_ical_events()
+                        except Exception as exc:
+                            st.error(f"Non riesco a leggere il calendario: {exc}")
+                            eventi_fc = pd.DataFrame(columns=data.ICAL_COLUMNS)
+
+                        # nasconde gli appuntamenti già registrati come lezione privata
+                        if not eventi_fc.empty and not lessons.empty:
+                            priv = lessons[lessons["mode"] == "privata"]
+                            gia = set(zip(priv["date"], priv["time"].astype(str).str[:5]))
+                            eventi_fc = eventi_fc[
+                                [
+                                    (d, t) not in gia
+                                    for d, t in zip(eventi_fc["date"], eventi_fc["time"])
+                                ]
+                            ]
+
+                        if eventi_fc.empty:
+                            st.info("Nessun appuntamento da inserire.")
+                        else:
+                            def _label_ev_fc(i) -> str:
+                                r = eventi_fc.loc[i]
+                                return (
+                                    f"{_fmt_giorno(r['date'])} ore {r['time']} — "
+                                    f"{r['titolo'] or '(senza titolo)'}"
+                                )
+
+                            ev_idx_fc = st.selectbox(
+                                "Appuntamento",
+                                options=list(eventi_fc.index),
+                                format_func=_label_ev_fc,
+                                key="fc_ical_evento",
+                            )
+                            ev_fc = eventi_fc.loc[ev_idx_fc]
+                            if ev_fc["note"]:
+                                st.caption(f"Note: {ev_fc['note']}")
+
+                            # ora modificabile; la chiave cambia con l'appuntamento
+                            fc_time = st.time_input(
+                                "Ora", value=time.fromisoformat(ev_fc["time"]),
+                                step=timedelta(minutes=15),
+                                key=f"fc_ical_ora_{ev_fc['uid']}_{ev_fc['date']}",
+                            )
+                            giorni_fc = [ev_fc["date"]]
+
+                elif ripeti_fc == "date":
                     opz_date = [
                         date.today() + timedelta(days=i) for i in range(-60, 366)
                     ]

@@ -1,7 +1,7 @@
 """Data access layer. Google Sheets."""
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import gspread
 import pandas as pd
@@ -278,6 +278,27 @@ def delete_lesson(lesson_id: str) -> bool:
     if cell is None or cell.col != 1:
         return False
     ws.delete_rows(cell.row)
+    load_lessons.clear()
+    return True
+
+
+def update_lesson(
+    lesson_id: str, date_str: str, time_str: str, title: str, teacher: str,
+    capacity: int, mode: str, location: str, category_id: str,
+) -> bool:
+    """Aggiorna una lezione esistente; le prenotazioni restano collegate."""
+    ws = _sheet("lessons")
+    cell = ws.find(str(lesson_id), in_column=1)
+    if cell is None:
+        return False
+    ws.update(
+        f"A{cell.row}:I{cell.row}",
+        [[
+            str(lesson_id), date_str, time_str, title.strip(), teacher.strip(),
+            int(capacity), mode.strip().lower(), location.strip(), str(category_id),
+        ]],
+        value_input_option="USER_ENTERED",
+    )
     load_lessons.clear()
     return True
 
@@ -743,3 +764,55 @@ def add_package_request(email: str, name: str, category_id: str) -> None:
         value_input_option="RAW",
     )
     load_package_requests.clear()
+
+
+# =============================================================
+# CALENDARIO ESTERNO (iCal / Google)
+# =============================================================
+
+ICAL_COLUMNS = ["uid", "titolo", "date", "time", "note"]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_ical_events(giorni_avanti: int = 60, giorni_indietro: int = 14) -> pd.DataFrame:
+    """Appuntamenti del calendario collegato (link .ics in secrets: ical_url)."""
+    from zoneinfo import ZoneInfo
+
+    import icalendar
+    import recurring_ical_events
+    import requests
+
+    url = str(st.secrets.get("ical_url", "")).strip()
+    if not url:
+        return pd.DataFrame(columns=ICAL_COLUMNS)
+    if url.startswith("webcal://"):
+        url = "https://" + url[len("webcal://"):]
+
+    resp = requests.get(url, timeout=20)
+    resp.raise_for_status()
+    cal = icalendar.Calendar.from_ical(resp.content)
+
+    roma = ZoneInfo("Europe/Rome")
+    oggi = datetime.now(roma).date()
+    eventi = recurring_ical_events.of(cal).between(
+        oggi - timedelta(days=giorni_indietro), oggi + timedelta(days=giorni_avanti)
+    )
+
+    righe = []
+    for ev in eventi:
+        inizio = ev.get("DTSTART").dt
+        if not isinstance(inizio, datetime):
+            continue  # eventi di tutto il giorno
+        if inizio.tzinfo is None:
+            inizio = inizio.replace(tzinfo=roma)
+        inizio = inizio.astimezone(roma)
+        righe.append({
+            "uid": str(ev.get("UID", "")),
+            "titolo": str(ev.get("SUMMARY", "") or "").strip(),
+            "date": inizio.date(),
+            "time": inizio.strftime("%H:%M"),
+            "note": str(ev.get("DESCRIPTION", "") or "").strip(),
+        })
+
+    df = pd.DataFrame(righe, columns=ICAL_COLUMNS)
+    return df.sort_values(["date", "time"]).reset_index(drop=True)
