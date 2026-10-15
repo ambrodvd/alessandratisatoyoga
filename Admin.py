@@ -1,6 +1,7 @@
 import re
 import unicodedata
 from datetime import date, time, timedelta
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -71,9 +72,9 @@ def _nome_cat(cid: str) -> str:
     return match.iloc[0] if not match.empty else str(cid)
 
 
-tab_lezioni, tab_pren, tab_persone, tab_rec, tab_pack = st.tabs(
-    ["Calendario", "Prenotazioni e private", "Persone e pagamenti",
-     "Gestione registrazioni", "Pacchetti registrazioni"]
+tab_lezioni, tab_pren, tab_persone, tab_rec, tab_com, tab_pack, = st.tabs(
+    ["Calendario", "Prenotazioni e private", "Pagamenti",
+     "Registrazioni", "Comunicazione", "Pacchetti"]
 )
 
 # =============================================================
@@ -2253,3 +2254,193 @@ with tab_pack:
                 st.error(f"Non sono riuscito a salvare: {exc}")
             if salvato:
                 st.rerun()
+
+# =============================================================
+# COMUNICAZIONE
+# =============================================================
+with tab_com:
+    # ---------- utenti: da prenotazioni, pagamenti e richieste pacchetti ----------
+    fonti_com = [
+        df[["email", "name"]]
+        for df in (bookings, payments, data.load_package_requests())
+        if not df.empty
+    ]
+    utenti_com = (
+        pd.concat(fonti_com, ignore_index=True)
+        if fonti_com else pd.DataFrame(columns=["email", "name"])
+    )
+    utenti_com["email"] = utenti_com["email"].astype(str).map(data.norm_email)
+    utenti_com = utenti_com[utenti_com["email"].str.contains("@")].copy()
+    utenti_com["name"] = (
+        utenti_com["name"].astype(str).str.strip()
+        .replace({"": pd.NA, "nan": pd.NA})
+    )
+    utenti_com = (
+        utenti_com.groupby("email", as_index=False)
+        .agg(name=("name", "last"))
+        .fillna({"name": ""})
+        .sort_values("name")
+        .reset_index(drop=True)
+    )
+
+    # ---------- conteggio e tabella ----------
+    st.metric("Utenti registrati", len(utenti_com))
+
+    if utenti_com.empty:
+        st.info("Nessun utente registrato.")
+    else:
+        tab_utenti = utenti_com.rename(columns={"name": "nome"})[["nome", "email"]]
+        st.dataframe(tab_utenti, use_container_width=True, hide_index=True)
+
+        st.markdown(
+            """
+            <style>
+            .st-key-gs_apri a {
+                background-color: #2e7d32;
+                border-color: #2e7d32;
+                color: white;
+            }
+            .st-key-gs_apri a:hover {
+                background-color: #1b5e20;
+                border-color: #1b5e20;
+                color: white;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        g1, g2, _ = st.columns([1, 1, 2])
+        if g1.button(
+            "Aggiorna foglio Google", use_container_width=True, key="gs_utenti"
+        ):
+            try:
+                data.export_users(tab_utenti)
+                st.success("Lista aggiornata nella scheda «utenti».")
+            except Exception as exc:
+                st.error(f"Non sono riuscito ad aggiornare il foglio: {exc}")
+
+        try:
+            url_foglio = data.users_sheet_url()
+        except Exception:
+            url_foglio = (
+                f"https://docs.google.com/spreadsheets/d/"
+                f"{st.secrets['spreadsheet_id']}/edit"
+            )
+        with g2.container(key="gs_apri"):
+            st.link_button("Apri foglio", url_foglio, use_container_width=True)
+
+        # ---------- opzioni di invio ----------
+        st.divider()
+        st.subheader("Scrivi una mail")
+
+        cat_com = st.pills(
+            "Categorie (nessuna selezionata = tutte)",
+            options=list(categories["category_id"]) if not categories.empty else [],
+            format_func=_nome_cat,
+            selection_mode="multi",
+            default=None,
+            key="com_cat_pills",
+        ) or []
+
+        chi_com = st.radio(
+            "Destinatari",
+            options=["tutti", "saldo_zero"],
+            format_func=lambda c: {
+                "tutti": "Tutti",
+                "saldo_zero": "Solo chi è a saldo 0",
+            }[c],
+            horizontal=True,
+            key="com_chi",
+        )
+
+        saldi_com = data.balances_all(payments, bookings, lessons, categories)
+        if cat_com and not saldi_com.empty:
+            saldi_com = saldi_com[saldi_com["category_id"].astype(str).isin(cat_com)]
+
+        if chi_com == "saldo_zero":
+            email_ok = (
+                set(saldi_com.loc[saldi_com["saldo"] == 0, "email"])
+                if not saldi_com.empty else set()
+            )
+            dest_com = utenti_com[utenti_com["email"].isin(email_ok)]
+        elif cat_com:
+            email_ok = set(saldi_com["email"]) if not saldi_com.empty else set()
+            dest_com = utenti_com[utenti_com["email"].isin(email_ok)]
+        else:
+            dest_com = utenti_com
+
+        st.caption(f"{len(dest_com)} destinatari con questi filtri")
+
+        if dest_com.empty:
+            st.info("Nessun destinatario con questi filtri.")
+        else:
+            tab_dest = dest_com.assign(invia=True)[["invia", "name", "email"]].rename(
+                columns={"name": "nome"}
+            )
+            mod_dest = st.data_editor(
+                tab_dest,
+                column_config={
+                    "invia": st.column_config.CheckboxColumn("invia", default=True),
+                },
+                disabled=["nome", "email"],
+                hide_index=True,
+                use_container_width=True,
+                key=f"com_dest_{chi_com}_{'_'.join(sorted(cat_com))}",
+            )
+            scelti_com = mod_dest[mod_dest["invia"]]
+
+            # ---------- apri in Gmail ----------
+            if not scelti_com.empty:
+                ccn = ",".join(scelti_com["email"])
+                url_gmail = (
+                    "https://mail.google.com/mail/?view=cm&fs=1"
+                    f"&authuser={quote(st.secrets['email']['sender'])}"
+                    f"&bcc={quote(ccn, safe=',@')}"
+                )
+                st.link_button(
+                    f"Apri in Gmail ({len(scelti_com)} in Ccn)", url_gmail
+                )
+                if len(url_gmail) > 7000:
+                    st.warning(
+                        "Lista molto lunga: Gmail potrebbe non accettarla tutta. "
+                        "Restringi i filtri o usa l'invio qui sotto."
+                    )
+
+            # ---------- oggetto e testo ----------
+            with st.form("com_mail"):
+                oggetto_com = st.text_input("Oggetto", key="com_oggetto")
+                testo_com = st.text_area("Testo", height=250, key="com_testo")
+                ok_com = st.checkbox(
+                    "Seleziona la casella se sei sicura di voler inviare",
+                    key="com_ok",
+                )
+                invia_com = st.form_submit_button(
+                    f"Invia a {len(scelti_com)} persone", type="primary"
+                )
+
+            if invia_com:
+                if not oggetto_com.strip() or not testo_com.strip():
+                    st.error("Scrivi oggetto e testo.")
+                elif scelti_com.empty:
+                    st.warning("Nessuna persona selezionata.")
+                elif not ok_com:
+                    st.error("Spunta la casella di conferma.")
+                else:
+                    barra = st.progress(0.0)
+                    inviate, fallite = 0, []
+                    for i, r in enumerate(scelti_com.itertuples(index=False), 1):
+                        try:
+                            mailer.send_custom(
+                                to=r.email, subject=oggetto_com.strip(),
+                                body=testo_com,
+                            )
+                            inviate += 1
+                        except Exception as exc:
+                            fallite.append(f"{r.nome or r.email} ({r.email}): {exc}")
+                        barra.progress(i / len(scelti_com))
+                    if inviate:
+                        st.success(f"Inviate {inviate} mail.")
+                    if fallite:
+                        st.error("Non inviate:")
+                        st.write("\n".join(f"- {f}" for f in fallite))

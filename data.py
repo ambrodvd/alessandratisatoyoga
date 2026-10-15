@@ -767,6 +767,35 @@ def add_package_request(email: str, name: str, category_id: str) -> None:
 
 
 # =============================================================
+# ESPORTAZIONE UTENTI
+# =============================================================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def users_sheet_url() -> str:
+    """Link diretto alla scheda «utenti»; se non esiste ancora, al foglio."""
+    base = f"https://docs.google.com/spreadsheets/d/{st.secrets['spreadsheet_id']}/edit"
+    try:
+        ws = _client().open_by_key(st.secrets["spreadsheet_id"]).worksheet("utenti")
+    except gspread.WorksheetNotFound:
+        return base
+    return f"{base}#gid={ws.id}"
+
+
+def export_users(utenti: pd.DataFrame) -> None:
+    """Scrive la lista utenti nella scheda «utenti» del foglio (la crea se manca)."""
+    sh = _client().open_by_key(st.secrets["spreadsheet_id"])
+    righe = [list(utenti.columns)] + utenti.astype(str).values.tolist()
+    try:
+        ws = sh.worksheet("utenti")
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(title="utenti", rows=len(righe) + 10, cols=len(utenti.columns))
+    ws.clear()
+    ws.resize(rows=max(len(righe), 1), cols=len(utenti.columns))
+    ws.update("A1", righe, value_input_option="RAW")
+    users_sheet_url.clear()
+
+
+# =============================================================
 # CALENDARIO ESTERNO (iCal / Google)
 # =============================================================
 

@@ -242,3 +242,8 @@ Grazie,
 {studio}
 """
     _send(to, f"Pacchetto periodico registrato — {categoria}", body)
+
+
+def send_custom(to: str, subject: str, body: str) -> None:
+    """Mail libera scritta dalla scheda Comunicazione."""
+    _send(to, subject, body)
