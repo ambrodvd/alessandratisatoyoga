@@ -127,6 +127,7 @@ def _client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
+@st.cache_resource
 def _sheet(tab: str) -> gspread.Worksheet:
     return _client().open_by_key(st.secrets["spreadsheet_id"]).worksheet(tab)
 
