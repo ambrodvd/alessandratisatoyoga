@@ -577,6 +577,29 @@ with tab_lezioni:
 # =============================================================
 with tab_pren:
 
+    # ---------- avviso prenotazioni doppie ----------
+    if not bookings.empty:
+        attive_dup = bookings[bookings["status"] != "cancelled"].assign(
+            email_n=lambda d: d["email"].astype(str).map(data.norm_email)
+        )
+        doppie = attive_dup[
+            attive_dup.duplicated(["lesson_id", "email_n"], keep=False)
+        ]
+        if not doppie.empty:
+            doppie = doppie.merge(
+                lessons[["lesson_id", "date", "time", "title"]],
+                on="lesson_id", how="left",
+            ).sort_values(["date", "time", "name", "timestamp"])
+            st.warning(
+                "⚠️ Ci sono prenotazioni doppie: annulla quelle in più "
+                "da «Annulla una prenotazione» qui sotto."
+            )
+            st.dataframe(
+                doppie[["date", "time", "title", "name", "email",
+                        "booking_id", "timestamp"]],
+                use_container_width=True, hide_index=True,
+            )
+
     # ---------- lezione privata ----------
     with st.expander("➕  Aggiungi lezione privata"):
         st.caption(

@@ -200,7 +200,9 @@ if submitted:
     else:
         nome_pulito = " ".join(name.split()).title()
         with st.spinner("Confermo..."):
-            if data.already_booked(choice.lesson_id, email):
+            if st.session_state.get("ultima_prenotazione") == (choice.lesson_id, email):
+                st.info("Prenotazione già registrata.")
+            elif data.already_booked(choice.lesson_id, email):
                 st.warning("Risulti già iscritto a questa lezione.")
             elif data.count_live(choice.lesson_id) >= choice.capacity:
                 st.error(
@@ -213,6 +215,7 @@ if submitted:
                 usate_prima = data.used_live(email, cat_id)
                 balance_before = data.balance_live(email, cat_id)
                 coperto = data.covered_live(email, cat_id, data.mese_di(choice.date))
+                st.session_state.ultima_prenotazione = (choice.lesson_id, email)
                 ref = data.add_booking(choice.lesson_id, nome_pulito, email)
                 balance_after = balance_before if coperto else balance_before - 1
                 prima_volta = usate_prima == 0
