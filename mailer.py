@@ -228,6 +228,23 @@ Grazie per aver scelti di praticare con me,
     _send(to, f"Pacchetto lezioni registrate — {categoria}", body)
 
 
+def send_package_request_admin(
+    name: str, email: str, categoria: str, credits: int, price: float,
+) -> None:
+    """Avviso allo studio: nuova richiesta di pacchetto dalla pagina pubblica."""
+    cfg = _cfg()
+    body = f"""Nuova richiesta di pacchetto registrazioni.
+
+Persona: {name}
+Email: {email}
+Pacchetto: {categoria} — {credits} lezioni
+Prezzo: € {price:.2f}
+
+Quando ricevi il pagamento, registralo da Persone e pagamenti → Registra un pagamento.
+"""
+    _send(cfg["sender"], f"Nuova richiesta pacchetto — {name}", body)
+
+
 def send_periodic_receipt(
     to: str, name: str, categoria: str, periodo: str,
     amount_eur: float, method: str = "",

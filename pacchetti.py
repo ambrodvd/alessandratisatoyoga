@@ -109,6 +109,17 @@ if submitted:
         except Exception:
             pass  # la richiesta non blocca il pagamento
 
+        try:
+            mailer.send_package_request_admin(
+                name=nome_pulito,
+                email=email_pulita,
+                categoria=pack["name"],
+                credits=crediti,
+                price=prezzo,
+            )
+        except Exception:
+            pass  # l'avviso allo studio non blocca l'utente
+
         st.success(
             f"Richiesta ricevuta — pacchetto {pack['name']}, "
             f"{crediti} lezioni registrate."
