@@ -58,6 +58,12 @@ def send_confirmation(
             if location.strip()
             else "La lezione è online. Ti mando il link a breve."
         )
+        dove += (
+            "\n\nDopo la lezione live riceverai via mail il link alla registrazione "
+            "su YouTube, così potrai rivederla quando vuoi.\n\n"
+            "Se non la trovi, controlla la tua cartella SPAM o Promozioni e "
+            "salvala in Posta in arrivo, oppure contattami via mail."
+        )
     else:
         dove = (
             f"Ci vediamo qui: {location}"
@@ -222,7 +228,11 @@ grazie per aver scelto il pacchetto di {credits} lezioni registrate di {categori
 
 {pagamento}Dopo il pagamento aggiorno io il tuo saldo e riceverai le prossime {credits} registrazioni via mail.
 
-Grazie per aver scelti di praticare con me,
+Ogni registrazione ti arriverà dopo la lezione live, con il link per vederla su YouTube.
+
+Se non la trovi, controlla la tua cartella SPAM o Promozioni e salvala in Posta in arrivo, oppure contattami via mail.
+
+Grazie per aver scelto di praticare con me,
 {studio}
 """
     _send(to, f"Pacchetto lezioni registrate — {categoria}", body)
