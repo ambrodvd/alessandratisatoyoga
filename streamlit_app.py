@@ -102,10 +102,11 @@ if pagina.title == "Prenota":
                 "**iPhone (Safari):** tocca Condividi ⬆️ (su iOS 26 è dentro il "
                 "menu ⋯ accanto all'indirizzo), scorri e tocca "
                 "**Aggiungi alla schermata Home**, poi **Aggiungi**.\n\n"
-                "**Android (Chrome):** tocca il menu ⋮ in alto a destra, poi "
-                "**Aggiungi a schermata Home**. Scegli **Crea scorciatoia** "
-                "(non «Installa»), scrivi un nome, per esempio *Yoga Alessandra*, "
-                "e conferma con **Aggiungi**.\n\n"
+                "**Android (Chrome):** tocca il menu ⋮ in alto a destra e scorri "
+                "fino a **Installa e crea scorciatoia** (su alcuni telefoni si "
+                "chiama *Aggiungi a schermata Home*). Nella finestra che si apre "
+                "scegli **Crea scorciatoia**, non «Installa», scrivi un nome, "
+                "per esempio *Yoga Alessandra*, e conferma.\n\n"
                 "Da quel momento trovi le lezioni con un tocco, come un'app."
             )
 
