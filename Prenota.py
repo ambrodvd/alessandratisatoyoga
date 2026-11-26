@@ -8,6 +8,15 @@ import mailer
 
 st.title("🧘 Prenota una lezione")
 
+with st.expander("📲 Aggiungi l'app alla schermata Home"):
+    st.markdown(
+        "**iPhone (Safari):** tocca il pulsante Condividi ⬆️ in basso, "
+        "poi **Aggiungi alla schermata Home**.\n\n"
+        "**Android (Chrome):** tocca il menu ⋮ in alto a destra, "
+        "poi **Aggiungi a schermata Home**.\n\n"
+        "Da quel momento trovi le lezioni con un tocco, come un'app."
+    )
+
 try:
     lessons = data.load_lessons()
     bookings = data.load_bookings()
@@ -187,7 +196,9 @@ with st.form("booking_form"):
     consent = st.checkbox(
         "Acconsento al trattamento dei miei dati per la gestione della prenotazione."
     )
-    submitted = st.form_submit_button("Conferma prenotazione", type="primary")
+    submitted = st.form_submit_button(
+        "Conferma prenotazione", type="primary", width="stretch"
+    )
 
 if submitted:
     errore_nome = nome_valido(name)

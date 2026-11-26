@@ -86,7 +86,9 @@ with st.form("package_form"):
     consent = st.checkbox(
         "Acconsento al trattamento dei miei dati per la gestione dell'acquisto."
     )
-    submitted = st.form_submit_button("Acquista il pacchetto", type="primary")
+    submitted = st.form_submit_button(
+        "Acquista il pacchetto", type="primary", width="stretch"
+    )
 
 if submitted:
     errore_nome = nome_valido(name)

@@ -1,0 +1,3 @@
+[client]
+# nasconde il menu "⋮" di Streamlit agli studenti (resta visibile solo a chi gestisce l'app)
+toolbarMode = "minimal"
