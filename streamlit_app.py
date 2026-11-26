@@ -64,6 +64,13 @@ st.markdown(
             min-height: 3rem;
         }
     }
+
+    /* il pannello "schermata Home" viene creato per primo ma mostrato in fondo,
+       così compare anche quando la pagina si ferma prima (st.stop) */
+    div:has(> .st-key-installa_app) {
+        order: 9999;
+        margin-top: 1.5rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -80,4 +87,26 @@ pacchetti = st.Page(
 )
 
 # barra in alto su computer; su telefono Streamlit la raccoglie nel menu »
-st.navigation([prenota, pacchetti, admin], position="top").run()
+pagina = st.navigation([prenota, pacchetti, admin], position="top")
+
+# =============================================================
+# ISTRUZIONI SCHERMATA HOME (in fondo alla pagina Prenota)
+# =============================================================
+
+if pagina.title == "Prenota":
+    with st.container(key="installa_app"):
+        with st.expander("📲 Aggiungi l'app alla schermata Home"):
+            st.markdown(
+                "Se hai aperto il link da WhatsApp, Instagram o dalla mail, "
+                "aprilo prima nel browser (Safari su iPhone, Chrome su Android).\n\n"
+                "**iPhone (Safari):** tocca Condividi ⬆️ (su iOS 26 è dentro il "
+                "menu ⋯ accanto all'indirizzo), scorri e tocca "
+                "**Aggiungi alla schermata Home**, poi **Aggiungi**.\n\n"
+                "**Android (Chrome):** tocca il menu ⋮ in alto a destra, poi "
+                "**Aggiungi a schermata Home**. Scegli **Crea scorciatoia** "
+                "(non «Installa»), scrivi un nome, per esempio *Yoga Alessandra*, "
+                "e conferma con **Aggiungi**.\n\n"
+                "Da quel momento trovi le lezioni con un tocco, come un'app."
+            )
+
+pagina.run()

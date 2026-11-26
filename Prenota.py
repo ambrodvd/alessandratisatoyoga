@@ -8,18 +8,6 @@ import mailer
 
 st.title("🧘 Prenota una lezione")
 
-with st.expander("📲 Aggiungi l'app alla schermata Home"):
-    st.markdown(
-        "Se hai aperto il link da WhatsApp, Instagram o dalla mail, "
-        "aprilo prima nel browser (Safari su iPhone, Chrome su Android).\n\n"
-        "**iPhone (Safari):** tocca Condividi ⬆️ (su iOS 26 è dentro il menu ⋯ "
-        "accanto all'indirizzo), scorri e tocca **Aggiungi alla schermata Home**, "
-        "poi **Aggiungi**.\n\n"
-        "**Android (Chrome):** tocca il menu ⋮ in alto a destra, "
-        "poi **Aggiungi a schermata Home** → **Aggiungi**.\n\n"
-        "Da quel momento trovi le lezioni con un tocco, come un'app."
-    )
-
 try:
     lessons = data.load_lessons()
     bookings = data.load_bookings()
